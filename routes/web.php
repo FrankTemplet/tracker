@@ -4,8 +4,9 @@ use App\Http\Controllers\PowerBiController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
 
-Route::inertia('/', 'welcome', [
+Route::inertia('/', 'auth/login', [
     'canRegister' => Features::enabled(Features::registration()),
+    'canResetPassword' => Features::enabled(Features::resetPasswords()),
 ])->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
