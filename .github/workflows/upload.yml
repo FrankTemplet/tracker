@@ -1,0 +1,98 @@
+name: Deploy to Hostinger
+on:
+  push:
+    branches:
+      - main
+jobs:
+  deploy:
+    name: Deploy to Hostinger Server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv
+          coverage: none
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+
+      - name: Install NPM dependencies
+        run: npm ci
+
+      - name: Build assets
+        run: npm run build
+
+      - name: Create deployment archive
+        run: |
+          echo "📦 Creating deployment archive..."
+          tar --warning=no-file-changed -czf deploy.tar.gz \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.github' \
+            --exclude='tests' \
+            --exclude='.env' \
+            --exclude='.env.example' \
+            --exclude='deploy.tar.gz' \
+            . || [ $? -eq 1 ]
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy to server
+        run: |
+          echo "🚀 Starting deployment to tracker-test.templet.io..."
+
+          # Upload archive
+          echo "⬆️ Uploading compiled application..."
+          scp -P 65002 -o StrictHostKeyChecking=no deploy.tar.gz u348838306@145.14.146.227:/home/u348838306/domains/tracker-test.templet.io/
+
+          # Extract and configure on server
+          ssh -p 65002 -o StrictHostKeyChecking=no u348838306@145.14.146.227 << 'EOF'
+            set -e
+
+            cd /home/u348838306/domains/tracker-test.templet.io
+
+            echo "📦 Extracting application..."
+            tar -xzf deploy.tar.gz -C public_html/
+            rm deploy.tar.gz
+
+            cd public_html
+
+            echo "🔧 Setting permissions..."
+            chmod -R 755 storage bootstrap/cache
+
+            echo "🔗 Setting PHP 8.4 as default for Composer..."
+            export PATH=/opt/alt/php84/usr/bin:$PATH
+            alias php=/opt/alt/php84/usr/bin/php
+
+            echo "🔄 Regenerating autoloader with correct PHP version..."
+            /opt/alt/php84/usr/bin/php /usr/local/bin/composer dump-autoload --optimize
+
+            echo "🗄️ Running database migrations..."
+            /opt/alt/php84/usr/bin/php artisan migrate --force
+
+            echo "🧹 Clearing cache..."
+            /opt/alt/php84/usr/bin/php artisan config:clear
+            /opt/alt/php84/usr/bin/php artisan cache:clear
+            /opt/alt/php84/usr/bin/php artisan route:clear
+            /opt/alt/php84/usr/bin/php artisan view:clear
+
+            echo "✅ Deployment completed successfully!"
+          EOF
+
+      - name: Cleanup
+        if: always()
+        run: rm -f deploy.tar.gz
