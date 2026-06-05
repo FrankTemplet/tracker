@@ -22,3 +22,16 @@ export type TwoFactorSetupData = {
 export type TwoFactorSecretKey = {
     secretKey: string;
 };
+
+export type EmailAnalyticsData = {
+    bounces: number;
+    bounce_rate: number;
+    opens: number;
+    open_rate: number;
+    clicks: number;
+    click_rate: number;
+    total_delivered: number;
+    unique_opens: number;
+    unique_clicks: number;
+    opt_out_rate: number;
+};
