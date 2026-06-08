@@ -22,23 +22,44 @@ class PowerBiController extends Controller
      */
     public function dashboard(Request $request): Response
     {
+        $selectedRegion = $request->query('region');
+        $selectedYear = $request->query('year');
         $selectedCampaignId = $request->query('campaign_id');
         $selectedEmailId = $request->query('email_id');
 
         try {
-            // Fetch campaigns from Power BI and filter by those that have email data
-            $rawCampaigns = $this->powerBiService->getCampaigns();
-            $allCampaigns = PowerBiDataTransformer::deduplicateCampaigns(
-                PowerBiDataTransformer::transformCampaigns($rawCampaigns)
-            );
+            $campaigns = [];
 
-            // Get unique campaign names that have email data
-            $emailCampaignNames = $this->powerBiService->getEmailCampaignNames();
+            // Only fetch campaigns if both region and year are selected
+            if ($selectedRegion && $selectedYear) {
+                // Fetch campaigns from Power BI and filter by those that have email data
+                $rawCampaigns = $this->powerBiService->getCampaigns();
+                $allCampaigns = PowerBiDataTransformer::deduplicateCampaigns(
+                    PowerBiDataTransformer::transformCampaigns($rawCampaigns)
+                );
 
-            // Filter campaigns to only those with email data
-            $campaigns = array_values(array_filter($allCampaigns, function ($campaign) use ($emailCampaignNames) {
-                return in_array($campaign['id'], $emailCampaignNames);
-            }));
+                // Get unique campaign names that have email data
+                $emailCampaignNames = $this->powerBiService->getEmailCampaignNames();
+
+                // Filter campaigns to only those with email data
+                $filteredCampaigns = array_filter($allCampaigns, function ($campaign) use ($emailCampaignNames) {
+                    return in_array($campaign['id'], $emailCampaignNames);
+                });
+
+                // Filter by region and year
+                $campaigns = array_values(array_filter($filteredCampaigns, function ($campaign) use ($selectedRegion, $selectedYear) {
+                    $campaignName = strtolower($campaign['name']);
+                    $region = strtolower($selectedRegion);
+
+                    // Check if campaign contains the region (carib or latam)
+                    $hasRegion = str_contains($campaignName, $region);
+
+                    // Check if campaign contains the year
+                    $hasYear = str_contains($campaignName, $selectedYear);
+
+                    return $hasRegion && $hasYear;
+                }));
+            }
 
             $emails = [];
             $analytics = null;
@@ -78,6 +99,8 @@ class PowerBiController extends Controller
                 'emails' => $emails,
                 'selectedCampaignId' => $selectedCampaignId,
                 'selectedEmailId' => $selectedEmailId,
+                'selectedRegion' => $selectedRegion,
+                'selectedYear' => $selectedYear,
                 'analytics' => $analytics,
                 'bouncesOpens' => $bouncesOpens,
                 'engagement' => $engagement,
@@ -95,6 +118,8 @@ class PowerBiController extends Controller
                 'emails' => [],
                 'selectedCampaignId' => $selectedCampaignId,
                 'selectedEmailId' => $selectedEmailId,
+                'selectedRegion' => $selectedRegion,
+                'selectedYear' => $selectedYear,
                 'error' => 'Failed to load dashboard data. Please try again later.',
             ]);
         }
