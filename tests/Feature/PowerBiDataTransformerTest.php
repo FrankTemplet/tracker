@@ -56,7 +56,7 @@ test('aggregateCampaignMetrics calculates rates correctly', function () {
     // Real Power BI data: status is the highest engagement level reached.
     // "Clicked" implies the member also opened (Clicked > Opened > Sent).
     $engagements = [
-        ['(raw) Engagement[Member Status]' => 'Opened'],
+        ['(raw) Engagement[Member Status]' => 'Opened', '(raw) Engagement[Primary Campaign Purpose]' => 'Lead Generation', '(raw) Engagement[Category]' => 'Email', '(raw) Engagement[Sub-Category]' => 'Offer', '(raw) Engagement[Segment]' => 'Small - Medium', '(raw) Engagement[Opportunities in Campaign]' => 0],
         ['(raw) Engagement[Member Status]' => 'Opened'],
         ['(raw) Engagement[Member Status]' => 'Opened'],
         ['(raw) Engagement[Member Status]' => 'Opened'],
@@ -83,7 +83,26 @@ test('aggregateCampaignMetrics calculates rates correctly', function () {
         ->and($metrics['delivered'])->toBe(9)
         ->and($metrics['open_rate'])->toBe(77.78) // 7 / 9 * 100
         ->and($metrics['click_rate'])->toBe(22.22) // 2 / 9 * 100
-        ->and($metrics['bounce_rate'])->toBe(10.0); // 1 / 10 * 100
+        ->and($metrics['bounce_rate'])->toBe(10.0) // 1 / 10 * 100
+        ->and($metrics['primary_purpose'])->toBe('Lead Generation')
+        ->and($metrics['category'])->toBe('Email')
+        ->and($metrics['sub_category'])->toBe('Offer')
+        ->and($metrics['segment'])->toBe('Small - Medium')
+        ->and($metrics['opportunities_in_campaign'])->toBe(0);
+});
+
+test('aggregateCampaignMetrics includes null detail fields when missing', function () {
+    $engagements = [
+        ['(raw) Engagement[Member Status]' => 'Opened'],
+    ];
+
+    $metrics = PowerBiDataTransformer::aggregateCampaignMetrics($engagements);
+
+    expect($metrics['primary_purpose'])->toBeNull()
+        ->and($metrics['category'])->toBeNull()
+        ->and($metrics['sub_category'])->toBeNull()
+        ->and($metrics['segment'])->toBeNull()
+        ->and($metrics['opportunities_in_campaign'])->toBeNull();
 });
 
 test('aggregateCampaignMetrics handles zero delivered correctly', function () {

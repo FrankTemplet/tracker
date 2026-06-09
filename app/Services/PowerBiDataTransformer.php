@@ -78,7 +78,7 @@ class PowerBiDataTransformer
      * Calculate aggregate metrics for a campaign from engagement records.
      *
      * @param  array  $engagements  Engagement records for a specific campaign
-     * @return array{sent: int, delivered: int, opened: int, clicked: int, bounced: int, open_rate: float, click_rate: float, bounce_rate: float}
+     * @return array{sent: int, delivered: int, opened: int, clicked: int, bounced: int, open_rate: float, click_rate: float, bounce_rate: float, primary_purpose: string|null, category: string|null, sub_category: string|null, segment: string|null, opportunities_in_campaign: int|null}
      */
     public static function aggregateCampaignMetrics(array $engagements): array
     {
@@ -110,6 +110,10 @@ class PowerBiDataTransformer
         $clickRate = $delivered > 0 ? round(($clicked / $delivered) * 100, 2) : 0.0;
         $bounceRate = $sent > 0 ? round(($bounced / $sent) * 100, 2) : 0.0;
 
+        // Campaign-level metadata lives on every row — take the first row.
+        $firstRow = $engagements[0] ?? [];
+        $opportunities = $firstRow['(raw) Engagement[Opportunities in Campaign]'] ?? null;
+
         return [
             'sent' => $sent,
             'delivered' => $delivered,
@@ -119,6 +123,12 @@ class PowerBiDataTransformer
             'open_rate' => $openRate,
             'click_rate' => $clickRate,
             'bounce_rate' => $bounceRate,
+            // Campaign details
+            'primary_purpose' => $firstRow['(raw) Engagement[Primary Campaign Purpose]'] ?? null,
+            'category' => $firstRow['(raw) Engagement[Category]'] ?? null,
+            'sub_category' => $firstRow['(raw) Engagement[Sub-Category]'] ?? null,
+            'segment' => $firstRow['(raw) Engagement[Segment]'] ?? null,
+            'opportunities_in_campaign' => $opportunities !== null ? (int) $opportunities : null,
         ];
     }
 

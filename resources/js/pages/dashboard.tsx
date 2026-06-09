@@ -2,13 +2,14 @@ import { Head, router } from '@inertiajs/react';
 import { useState } from 'react';
 import { CampaignSelector, type Campaign } from '@/components/campaign-selector';
 import { CampaignFilters, type Region } from '@/components/campaign-filters';
+import { CampaignDetails } from '@/components/campaign-details';
 import { CampaignMetrics, type CampaignMetricsData, type MemberStatus } from '@/components/campaign-metrics';
 import { MemberListPanel, type Member } from '@/components/member-list-panel';
 import { RefreshIndicator } from '@/components/refresh-indicator';
 import { DashboardSkeleton } from '@/components/dashboard-skeleton';
 import { Button } from '@/components/ui/button';
 import { dashboard } from '@/routes';
-import { Mail, X } from 'lucide-react';
+import { X } from 'lucide-react';
 
 interface DashboardProps {
     campaigns?: Campaign[];
@@ -164,6 +165,17 @@ export default function Dashboard({
                         <DashboardSkeleton />
                     ) : (
                         <div className="flex flex-col gap-4">
+                            {analytics && (
+                                <CampaignDetails
+                                    details={{
+                                        primary_purpose: analytics.primary_purpose,
+                                        category: analytics.category,
+                                        sub_category: analytics.sub_category,
+                                        segment: analytics.segment,
+                                        opportunities_in_campaign: analytics.opportunities_in_campaign,
+                                    }}
+                                />
+                            )}
                             <CampaignMetrics
                                 metrics={analytics ?? null}
                                 isLoading={isLoading}

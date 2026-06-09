@@ -13,6 +13,12 @@ export interface CampaignMetricsData {
     open_rate: number;
     click_rate: number;
     bounce_rate: number;
+    // Campaign details
+    primary_purpose: string | null;
+    category: string | null;
+    sub_category: string | null;
+    segment: string | null;
+    opportunities_in_campaign: number | null;
 }
 
 export type MemberStatus = 'Opened' | 'Clicked' | 'Bounced' | 'Sent';
