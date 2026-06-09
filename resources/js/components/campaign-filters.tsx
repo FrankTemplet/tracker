@@ -25,17 +25,17 @@ export function CampaignFilters({
     availableYears = [],
 }: CampaignFiltersProps) {
     // If no years provided, generate last 5 years
-    const years = availableYears.length > 0 
-        ? availableYears 
+    const years = availableYears.length > 0
+        ? availableYears
         : Array.from({ length: 5 }, (_, i) => {
             const year = new Date().getFullYear() - i;
             return year.toString();
         });
 
     return (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <>
             {/* Region Filter */}
-            <div className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm min-w-40">
                 <div className="rounded-lg bg-primary/10 p-1.5 shrink-0">
                     <Globe className="h-4 w-4 text-primary" />
                 </div>
@@ -59,7 +59,7 @@ export function CampaignFilters({
             </div>
 
             {/* Year Filter */}
-            <div className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm min-w-36">
                 <div className="rounded-lg bg-primary/10 p-1.5 shrink-0">
                     <Calendar className="h-4 w-4 text-primary" />
                 </div>
@@ -84,6 +84,6 @@ export function CampaignFilters({
                     </Select>
                 </div>
             </div>
-        </div>
+        </>
     );
 }

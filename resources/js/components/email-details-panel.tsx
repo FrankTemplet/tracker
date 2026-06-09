@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Mail, User, Send, Hash } from 'lucide-react';
+import { Mail, Hash } from 'lucide-react';
 import type { Email } from '@/components/email-list-item';
 
 interface EmailDetailsPanelProps {
@@ -47,26 +47,6 @@ export function EmailDetailsPanel({ email }: EmailDetailsPanelProps) {
             </CardHeader>
             <CardContent className="p-4">
                 <div className="grid grid-cols-1 gap-3">
-                    <div className="flex items-start gap-3 rounded-lg bg-muted/40 p-3">
-                        <div className="rounded-md bg-background p-1.5 shrink-0 border">
-                            <User className="h-3.5 w-3.5 text-muted-foreground" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">From</p>
-                            <p className="text-sm truncate">{email.from}</p>
-                        </div>
-                    </div>
-
-                    <div className="flex items-start gap-3 rounded-lg bg-muted/40 p-3">
-                        <div className="rounded-md bg-background p-1.5 shrink-0 border">
-                            <Send className="h-3.5 w-3.5 text-muted-foreground" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">To</p>
-                            <p className="text-sm truncate">{email.to}</p>
-                        </div>
-                    </div>
-
                     <div className="flex items-start gap-3 rounded-lg bg-muted/40 p-3">
                         <div className="rounded-md bg-background p-1.5 shrink-0 border">
                             <Hash className="h-3.5 w-3.5 text-muted-foreground" />

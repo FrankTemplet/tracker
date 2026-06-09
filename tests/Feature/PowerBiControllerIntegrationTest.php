@@ -3,12 +3,15 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class PowerBiControllerIntegrationTest extends TestCase
 {
-    public function test_campaigns_endpoint_returns_transformed_data(): void
+    use RefreshDatabase;
+
+    public function test_campaigns_endpoint_returns_transformed_unique_campaigns(): void
     {
         $this->actingAs(User::factory()->create());
 
@@ -23,9 +26,10 @@ class PowerBiControllerIntegrationTest extends TestCase
                             [
                                 'rows' => [
                                     [
-                                        'REPORT - Campaign Tracker[Campaign Name]' => 'Prod_CloudSuite_Ent',
-                                        'REPORT - Campaign Tracker[Date]' => '2025-05-14T00:00:00',
-                                        'REPORT - Campaign Tracker[Status]' => 'In Progress',
+                                        '(raw) Engagement[Campaign ID]' => '701Pl00000hB2yb',
+                                        '(raw) Engagement[Campaign Name]' => 'CARIB_JAM_Prod_CloudSuite_Ent_May2025',
+                                        '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',
+                                        '(raw) Engagement[Start Date]' => '5/5/2025',
                                     ],
                                 ],
                             ],
@@ -41,13 +45,58 @@ class PowerBiControllerIntegrationTest extends TestCase
         $response->assertJsonStructure([
             'success',
             'data' => [
-                '*' => ['id', 'name', 'created_at'],
+                '*' => ['id', 'name', 'business_unit', 'created_at'],
             ],
         ]);
-        $response->assertJsonPath('data.0.name', 'Prod_CloudSuite_Ent');
+        $response->assertJsonPath('data.0.id', '701Pl00000hB2yb');
+        $response->assertJsonPath('data.0.name', 'CARIB_JAM_Prod_CloudSuite_Ent_May2025');
     }
 
-    public function test_campaign_emails_endpoint_returns_transformed_emails(): void
+    public function test_campaign_metrics_endpoint_returns_aggregated_metrics(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        Http::fake([
+            'login.microsoftonline.com/*' => Http::response([
+                'access_token' => 'fake_token_abc123',
+            ]),
+            'api.powerbi.com/*' => Http::response([
+                'results' => [
+                    [
+                        'tables' => [
+                            [
+                                'rows' => [
+                                    ['(raw) Engagement[Member Status]' => 'Sent'],
+                                    ['(raw) Engagement[Member Status]' => 'Sent'],
+                                    ['(raw) Engagement[Member Status]' => 'Sent'],
+                                    ['(raw) Engagement[Member Status]' => 'Sent'],
+                                    ['(raw) Engagement[Member Status]' => 'Sent'],
+                                    ['(raw) Engagement[Member Status]' => 'Opened'],
+                                    ['(raw) Engagement[Member Status]' => 'Opened'],
+                                    ['(raw) Engagement[Member Status]' => 'Clicked'],
+                                    ['(raw) Engagement[Member Status]' => 'Bounced'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ]),
+        ]);
+
+        $response = $this->getJson('/api/powerbi/campaigns/701Pl00000hB2yb/metrics');
+
+        $response->assertStatus(200);
+        $response->assertJsonStructure([
+            'success',
+            'data' => ['sent', 'delivered', 'opened', 'clicked', 'bounced', 'open_rate', 'click_rate', 'bounce_rate'],
+        ]);
+        $response->assertJsonPath('data.sent', 9);  // total record count = sent
+        $response->assertJsonPath('data.opened', 3);  // 2 Opened + 1 Clicked (implicit open)
+        $response->assertJsonPath('data.clicked', 1);
+        $response->assertJsonPath('data.bounced', 1);
+    }
+
+    public function test_campaign_members_endpoint_returns_member_list(): void
     {
         $this->actingAs(User::factory()->create());
 
@@ -62,10 +111,20 @@ class PowerBiControllerIntegrationTest extends TestCase
                             [
                                 'rows' => [
                                     [
-                                        'REPORT - Campaign Tracker[Campaign Name]' => 'Test_Campaign',
-                                        'REPORT - Campaign Tracker[Subject]' => 'Welcome Email',
-                                        'REPORT - Campaign Tracker[Scheduled Date]' => '2025-05-15T10:00:00',
-                                        'REPORT - Campaign Tracker[Total Delivered]' => 100,
+                                        '(raw) Engagement[Member ID]' => '00vPl00000UmUCI',
+                                        '(raw) Engagement[First Name]' => 'Shanequa',
+                                        '(raw) Engagement[Last Name]' => 'Hall',
+                                        '(raw) Engagement[Email]' => 'shanequa@example.com',
+                                        '(raw) Engagement[Company]' => 'Drink Pure',
+                                        '(raw) Engagement[Member Status Update Date]' => '5/19/2025',
+                                    ],
+                                    [
+                                        '(raw) Engagement[Member ID]' => '00vPl00000UmUDJ',
+                                        '(raw) Engagement[First Name]' => 'John',
+                                        '(raw) Engagement[Last Name]' => 'Smith',
+                                        '(raw) Engagement[Email]' => 'john@example.com',
+                                        '(raw) Engagement[Company]' => 'Tech Corp',
+                                        '(raw) Engagement[Member Status Update Date]' => '5/20/2025',
                                     ],
                                 ],
                             ],
@@ -75,29 +134,17 @@ class PowerBiControllerIntegrationTest extends TestCase
             ]),
         ]);
 
-        $response = $this->getJson('/api/powerbi/campaigns/Test_Campaign/emails');
+        $response = $this->getJson('/api/powerbi/campaigns/701Pl00000hB2yb/members/Opened');
 
         $response->assertStatus(200);
         $response->assertJsonStructure([
             'success',
             'data' => [
-                '*' => ['id', 'campaign_id', 'subject', 'from', 'to', 'sent_at'],
+                '*' => ['member_id', 'first_name', 'last_name', 'email', 'company', 'status_update_date'],
             ],
         ]);
-        $response->assertJsonPath('data.0.subject', 'Welcome Email');
-        $response->assertJsonPath('data.0.campaign_id', 'Test_Campaign');
-    }
-
-    public function test_email_analytics_endpoint(): void
-    {
-        $this->actingAs(User::factory()->create());
-
-        $response = $this->getJson('/api/powerbi/emails/test_email_id/analytics');
-
-        $response->assertStatus(200);
-        $response->assertJsonStructure([
-            'success',
-            'data' => ['bounces', 'bounce_rate', 'opens', 'open_rate', 'clicks', 'click_rate'],
-        ]);
+        $response->assertJsonPath('data.0.first_name', 'Shanequa');
+        $response->assertJsonPath('data.0.email', 'shanequa@example.com');
+        $response->assertJsonPath('data.1.first_name', 'John');
     }
 }

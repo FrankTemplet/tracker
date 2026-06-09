@@ -44,7 +44,7 @@ class PowerBiIntegrationTest extends TestCase
         });
     }
 
-    public function test_campaigns_are_fetched_from_execute_queries_endpoint(): void
+    public function test_unique_campaigns_are_fetched_from_execute_queries_endpoint(): void
     {
         Http::fake([
             'login.microsoftonline.com/*' => Http::response([
@@ -57,9 +57,10 @@ class PowerBiIntegrationTest extends TestCase
                             [
                                 'rows' => [
                                     [
-                                        'REPORT - Campaign Tracker[Campaign]' => 'Prod_CloudSuite_Ent',
-                                        'REPORT - Campaign Tracker[Full Campaign Name]' => 'CARIB_JAM_Prod_CloudSuite_Ent_May2025',
-                                        'REPORT - Campaign Tracker[Status]' => 'In Progress',
+                                        '(raw) Engagement[Campaign ID]' => '701Pl00000hB2yb',
+                                        '(raw) Engagement[Campaign Name]' => 'CARIB_JAM_Prod_CloudSuite_Ent_May2025',
+                                        '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',
+                                        '(raw) Engagement[Start Date]' => '5/5/2025',
                                     ],
                                 ],
                             ],
@@ -69,13 +70,14 @@ class PowerBiIntegrationTest extends TestCase
             ]),
         ]);
 
-        $campaigns = $this->service->getCampaigns();
+        $campaigns = $this->service->getUniqueCampaigns();
 
         $this->assertCount(1, $campaigns);
-        $this->assertEquals('Prod_CloudSuite_Ent', $campaigns[0]['REPORT - Campaign Tracker[Campaign]']);
+        $this->assertEquals('701Pl00000hB2yb', $campaigns[0]['campaign_id']);
+        $this->assertEquals('CARIB_JAM_Prod_CloudSuite_Ent_May2025', $campaigns[0]['campaign_name']);
     }
 
-    public function test_emails_are_fetched_for_a_campaign(): void
+    public function test_engagements_are_fetched_for_a_campaign(): void
     {
         Http::fake([
             'login.microsoftonline.com/*' => Http::response([
@@ -88,9 +90,11 @@ class PowerBiIntegrationTest extends TestCase
                             [
                                 'rows' => [
                                     [
-                                        '(raw email) Campaign%20Outcomes%20AllLiberty[Campaign Name]' => 'CARIB_TRI_Prod_CloudBundle_Ent_Sep2025',
-                                        '(raw email) Campaign%20Outcomes%20AllLiberty[Subject]' => 'Take your business to the next level with Cloud',
-                                        '(raw email) Campaign%20Outcomes%20AllLiberty[Total Delivered]' => 520,
+                                        '(raw) Engagement[Campaign ID]' => '701Pl00000hB2yb',
+                                        '(raw) Engagement[Campaign Name]' => 'CARIB_TRI_Prod_CloudBundle_Ent_Sep2025',
+                                        '(raw) Engagement[Member Status]' => 'Opened',
+                                        '(raw) Engagement[First Name]' => 'John',
+                                        '(raw) Engagement[Last Name]' => 'Doe',
                                     ],
                                 ],
                             ],
@@ -100,13 +104,14 @@ class PowerBiIntegrationTest extends TestCase
             ]),
         ]);
 
-        $emails = $this->service->getCampaignEmails('CARIB_TRI_Prod_CloudBundle_Ent_Sep2025');
+        $engagements = $this->service->getEngagementsByCampaign('701Pl00000hB2yb');
 
-        $this->assertCount(1, $emails);
-        $this->assertEquals('CARIB_TRI_Prod_CloudBundle_Ent_Sep2025', $emails[0]['(raw email) Campaign%20Outcomes%20AllLiberty[Campaign Name]']);
+        $this->assertCount(1, $engagements);
+        $this->assertEquals('701Pl00000hB2yb', $engagements[0]['(raw) Engagement[Campaign ID]']);
+        $this->assertEquals('Opened', $engagements[0]['(raw) Engagement[Member Status]']);
     }
 
-    public function test_email_campaign_names_are_fetched(): void
+    public function test_members_by_status_are_fetched(): void
     {
         Http::fake([
             'login.microsoftonline.com/*' => Http::response([
@@ -119,13 +124,20 @@ class PowerBiIntegrationTest extends TestCase
                             [
                                 'rows' => [
                                     [
-                                        '(raw email) Campaign%20Outcomes%20AllLiberty[Campaign Name]' => 'CARIB_BAH_Newsletter_Apr2025',
+                                        '(raw) Engagement[Member ID]' => '00vPl00000UmUCI',
+                                        '(raw) Engagement[First Name]' => 'Shanequa',
+                                        '(raw) Engagement[Last Name]' => 'Hall',
+                                        '(raw) Engagement[Email]' => 'shanequa@example.com',
+                                        '(raw) Engagement[Company]' => 'Drink Pure',
+                                        '(raw) Engagement[Member Status Update Date]' => '5/19/2025',
                                     ],
                                     [
-                                        '(raw email) Campaign%20Outcomes%20AllLiberty[Campaign Name]' => 'CARIB_JAM_Update_Feb2025',
-                                    ],
-                                    [
-                                        '(raw email) Campaign%20Outcomes%20AllLiberty[Campaign Name]' => 'CARIB_BAH_Newsletter_Apr2025',
+                                        '(raw) Engagement[Member ID]' => '00vPl00000UmUDJ',
+                                        '(raw) Engagement[First Name]' => 'John',
+                                        '(raw) Engagement[Last Name]' => 'Smith',
+                                        '(raw) Engagement[Email]' => 'john@example.com',
+                                        '(raw) Engagement[Company]' => 'Tech Corp',
+                                        '(raw) Engagement[Member Status Update Date]' => '5/20/2025',
                                     ],
                                 ],
                             ],
@@ -135,10 +147,12 @@ class PowerBiIntegrationTest extends TestCase
             ]),
         ]);
 
-        $names = $this->service->getEmailCampaignNames();
+        $members = $this->service->getMembersByStatus('701Pl00000hB2yb', 'Opened');
 
-        $this->assertCount(2, $names);
-        $this->assertContains('CARIB_BAH_Newsletter_Apr2025', $names);
-        $this->assertContains('CARIB_JAM_Update_Feb2025', $names);
+        $this->assertCount(2, $members);
+        $this->assertEquals('00vPl00000UmUCI', $members[0]['member_id']);
+        $this->assertEquals('Shanequa', $members[0]['first_name']);
+        $this->assertEquals('shanequa@example.com', $members[0]['email']);
+        $this->assertEquals('John', $members[1]['first_name']);
     }
 }

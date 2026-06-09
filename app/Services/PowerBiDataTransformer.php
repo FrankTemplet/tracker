@@ -5,141 +5,153 @@ namespace App\Services;
 class PowerBiDataTransformer
 {
     /**
-     * Transform Power BI campaign data to frontend format.
+     * Transform unique campaign data from Power BI to frontend format.
      *
-     * @param  array  $powerBiCampaigns  Raw data from Power BI
-     * @return array<int, array{id: string, name: string, created_at: string}>
+     * @param  array  $powerBiCampaigns  Unique campaign data from Power BI
+     * @return array<int, array{id: string, name: string, business_unit: string, created_at: string}>
      */
     public static function transformCampaigns(array $powerBiCampaigns): array
     {
         return array_map(function ($campaign) {
-            // Use Full Campaign Name if available, otherwise fall back to Campaign
-            $campaignName = $campaign['REPORT - Campaign Tracker[Full Campaign Name]']
-                ?? $campaign['REPORT - Campaign Tracker[Campaign]']
-                ?? 'Unknown Campaign';
-            $createdAt = $campaign['REPORT - Campaign Tracker[Date]'] ?? now()->toIso8601String();
-
             return [
-                'id' => $campaignName,
-                'name' => $campaignName,
-                'created_at' => $createdAt,
+                'id' => $campaign['campaign_id'] ?? '',
+                'name' => $campaign['campaign_name'] ?? 'Unknown Campaign',
+                'business_unit' => $campaign['business_unit'] ?? '',
+                'created_at' => $campaign['start_date'] ?? now()->toIso8601String(),
             ];
         }, $powerBiCampaigns);
     }
 
     /**
-     * Transform Power BI email data to frontend format.
+     * Aggregate engagement data by campaign to calculate metrics.
+     * Takes granular engagement records and groups them by campaign.
      *
-     * @param  array  $powerBiEmails  Raw data from Power BI
-     * @return array<int, array{id: string, campaign_id: string, subject: string, from: string, to: string, sent_at: string, delivered: int}>
+     * @param  array  $engagements  Raw engagement records from Power BI
+     * @return array<string, array{campaign_id: string, campaign_name: string, total_sent: int, total_opened: int, total_clicked: int, total_bounced: int, unique_members: int}>
      */
-    public static function transformEmails(array $powerBiEmails): array
+    public static function aggregateEngagementsByCampaign(array $engagements): array
     {
-        return array_map(function ($email, $index) {
-            // Emails come from different table: (raw email) Campaign Outcomes AllLiberty
-            $campaignName = $email['(raw email) Campaign%20Outcomes%20AllLiberty[Campaign Name]']
-                ?? $email['REPORT - Campaign Tracker[Campaign Name]']
-                ?? $email['REPORT - Campaign Tracker[Full Campaign Name]']
-                ?? $email['REPORT - Campaign Tracker[Campaign]']
-                ?? 'Unknown Campaign';
-            $subject = $email['(raw email) Campaign%20Outcomes%20AllLiberty[Subject]']
-                ?? $email['REPORT - Campaign Tracker[Subject]']
-                ?? 'No Subject';
-            $scheduledDate = $email['(raw email) Campaign%20Outcomes%20AllLiberty[Scheduled Date]']
-                ?? $email['REPORT - Campaign Tracker[Scheduled Date]']
-                ?? now()->toIso8601String();
-            $delivered = (int) ($email['(raw email) Campaign%20Outcomes%20AllLiberty[Total Delivered]'] ?? 0);
+        $campaignMetrics = [];
 
-            return [
-                'id' => self::stableEmailId($email),
-                'campaign_id' => $campaignName,
-                'subject' => $subject,
-                'from' => 'campaigns@company.com',
-                'to' => 'recipient@example.com',
-                'sent_at' => $scheduledDate,
-                'delivered' => $delivered,
-            ];
-        }, $powerBiEmails, array_keys($powerBiEmails));
-    }
+        foreach ($engagements as $engagement) {
+            $campaignId = $engagement['(raw) Engagement[Campaign ID]'] ?? '';
+            $campaignName = $engagement['(raw) Engagement[Campaign Name]'] ?? '';
+            $memberStatus = $engagement['(raw) Engagement[Member Status]'] ?? '';
+            $memberId = $engagement['(raw) Engagement[Member ID]'] ?? '';
 
-    /**
-     * Generate a stable ID for an email by sorting keys before hashing,
-     * so that different key orderings from the API produce the same ID.
-     */
-    public static function stableEmailId(array $email): string
-    {
-        ksort($email);
+            if (! isset($campaignMetrics[$campaignId])) {
+                $campaignMetrics[$campaignId] = [
+                    'campaign_id' => $campaignId,
+                    'campaign_name' => $campaignName,
+                    'total_sent' => 0,
+                    'total_opened' => 0,
+                    'total_clicked' => 0,
+                    'total_bounced' => 0,
+                    'unique_members' => [],
+                ];
+            }
 
-        return hash('sha256', json_encode($email));
-    }
+            // Track unique members
+            if ($memberId && ! in_array($memberId, $campaignMetrics[$campaignId]['unique_members'])) {
+                $campaignMetrics[$campaignId]['unique_members'][] = $memberId;
+            }
 
-    /**
-     * Extract analytics from Power BI email data.
-     *
-     * @param  array  $powerBiEmail  Email data from Power BI
-     * @return array{bounces: int, bounce_rate: float, opens: int, open_rate: float, clicks: int, click_rate: float, total_delivered: int, unique_opens: int, unique_clicks: int, opt_out_rate: float}
-     */
-    public static function extractEmailAnalytics(array $powerBiEmail): array
-    {
-        // Emails come from different table with different prefix
-        $totalDelivered = (int) ($powerBiEmail['(raw email) Campaign%20Outcomes%20AllLiberty[Total Delivered]']
-            ?? $powerBiEmail['REPORT - Campaign Tracker[Total Delivered]']
-            ?? 0);
-        $totalOpens = (int) ($powerBiEmail['(raw email) Campaign%20Outcomes%20AllLiberty[Total Opens]']
-            ?? $powerBiEmail['REPORT - Campaign Tracker[Total Opens]']
-            ?? 0);
-        $totalClicks = (int) ($powerBiEmail['(raw email) Campaign%20Outcomes%20AllLiberty[Total Clicks]']
-            ?? $powerBiEmail['REPORT - Campaign Tracker[Total Clicks]']
-            ?? 0);
-        $openRate = (float) ($powerBiEmail['(raw email) Campaign%20Outcomes%20AllLiberty[Open Rate]']
-            ?? $powerBiEmail['REPORT - Campaign Tracker[Open Rate]']
-            ?? 0);
-        $clickRate = (float) ($powerBiEmail['(raw email) Campaign%20Outcomes%20AllLiberty[Total Click Through Rate]']
-            ?? $powerBiEmail['REPORT - Campaign Tracker[Total Click Through Rate]']
-            ?? 0);
-
-        $bounceRate = 0.0;
-        $bounces = 0;
-        $optOutRate = 0.0;
-
-        if ($totalDelivered > 0) {
-            $bounces = $totalDelivered - $totalOpens;
-            $bounceRate = round(($bounces / $totalDelivered) * 100, 2);
-            $optOutRate = round(($bounces / $totalDelivered) * 100, 2);
+            // Count by status
+            match ($memberStatus) {
+                'Sent' => $campaignMetrics[$campaignId]['total_sent']++,
+                'Opened' => $campaignMetrics[$campaignId]['total_opened']++,
+                'Clicked' => $campaignMetrics[$campaignId]['total_clicked']++,
+                'Bounced' => $campaignMetrics[$campaignId]['total_bounced']++,
+                default => null,
+            };
         }
 
+        // Convert unique_members array to count
+        foreach ($campaignMetrics as $campaignId => $metrics) {
+            $campaignMetrics[$campaignId]['unique_members'] = count($metrics['unique_members']);
+        }
+
+        return $campaignMetrics;
+    }
+
+    /**
+     * Calculate aggregate metrics for a campaign from engagement records.
+     *
+     * @param  array  $engagements  Engagement records for a specific campaign
+     * @return array{sent: int, delivered: int, opened: int, clicked: int, bounced: int, open_rate: float, click_rate: float, bounce_rate: float}
+     */
+    public static function aggregateCampaignMetrics(array $engagements): array
+    {
+        // sent = total records in the engagement table for this campaign.
+        // Each row represents one campaign member regardless of their status.
+        $sent = count($engagements);
+        $opened = 0;
+        $clicked = 0;
+        $bounced = 0;
+
+        foreach ($engagements as $engagement) {
+            $memberStatus = strtolower($engagement['(raw) Engagement[Member Status]'] ?? '');
+
+            // "Clicked" implies the member also opened, so count toward both.
+            // Salesforce stores the highest status only (Clicked > Opened > Sent).
+            if (str_contains($memberStatus, 'click')) {
+                $clicked++;
+                $opened++; // implicit open
+            } elseif (str_contains($memberStatus, 'open')) {
+                $opened++;
+            } elseif (str_contains($memberStatus, 'bounce')) {
+                $bounced++;
+            }
+            // "Sent"/"Enviado" fall through — they are already counted in $sent (total count)
+        }
+
+        $delivered = $sent - $bounced;
+        $openRate = $delivered > 0 ? round(($opened / $delivered) * 100, 2) : 0.0;
+        $clickRate = $delivered > 0 ? round(($clicked / $delivered) * 100, 2) : 0.0;
+        $bounceRate = $sent > 0 ? round(($bounced / $sent) * 100, 2) : 0.0;
+
         return [
-            'bounces' => $bounces,
-            'bounce_rate' => $bounceRate,
-            'opens' => $totalOpens,
+            'sent' => $sent,
+            'delivered' => $delivered,
+            'opened' => $opened,
+            'clicked' => $clicked,
+            'bounced' => $bounced,
             'open_rate' => $openRate,
-            'clicks' => $totalClicks,
             'click_rate' => $clickRate,
-            'total_delivered' => $totalDelivered,
-            'unique_opens' => $totalOpens,
-            'unique_clicks' => $totalClicks,
-            'opt_out_rate' => $optOutRate,
+            'bounce_rate' => $bounceRate,
         ];
     }
 
     /**
-     * Remove duplicate campaigns by name.
+     * Transform member engagement details to frontend format.
      *
-     * @return array<int, array>
+     * @param  array  $members  Member engagement records
+     * @return array<int, array{member_id: string, first_name: string, last_name: string, email: string, company: string, status_update_date: string}>
      */
-    public static function deduplicateCampaigns(array $campaigns): array
+    public static function transformMemberDetails(array $members): array
     {
-        $seen = [];
-        $unique = [];
+        return array_map(function ($member) {
+            return [
+                'member_id' => $member['(raw) Engagement[Member ID]'] ?? $member['member_id'] ?? '',
+                'first_name' => $member['(raw) Engagement[First Name]'] ?? $member['first_name'] ?? '',
+                'last_name' => $member['(raw) Engagement[Last Name]'] ?? $member['last_name'] ?? '',
+                'email' => $member['(raw) Engagement[Email]'] ?? $member['email'] ?? '',
+                'company' => $member['(raw) Engagement[Company]'] ?? $member['company'] ?? '',
+                'status_update_date' => $member['(raw) Engagement[Member Status Update Date]'] ?? $member['status_update_date'] ?? '',
+            ];
+        }, $members);
+    }
 
-        foreach ($campaigns as $campaign) {
-            $name = $campaign['name'] ?? 'Unknown';
-            if (! isset($seen[$name])) {
-                $seen[$name] = true;
-                $unique[] = $campaign;
-            }
-        }
+    /**
+     * Generate a stable ID from engagement record.
+     *
+     * @param  array  $engagement  Engagement record
+     */
+    public static function stableEngagementId(array $engagement): string
+    {
+        $campaignId = $engagement['(raw) Engagement[Campaign ID]'] ?? '';
+        $memberId = $engagement['(raw) Engagement[Member ID]'] ?? '';
 
-        return $unique;
+        return hash('sha256', $campaignId.$memberId);
     }
 }

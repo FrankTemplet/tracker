@@ -11,13 +11,31 @@ beforeEach(function () {
     $this->user = User::factory()->create();
 });
 
-test('campaigns endpoint returns list of campaigns for authenticated user', function () {
+test('campaigns endpoint returns list of unique campaigns for authenticated user', function () {
     Http::fake([
         'login.microsoftonline.com/*' => Http::response(['access_token' => 'fake-token']),
-        'api.powerbi.com/*/Campaigns/rows' => Http::response([
-            'value' => [
-                ['id' => 'campaign-1', 'name' => 'Summer Sale'],
-                ['id' => 'campaign-2', 'name' => 'Newsletter May'],
+        'api.powerbi.com/*' => Http::response([
+            'results' => [
+                [
+                    'tables' => [
+                        [
+                            'rows' => [
+                                [
+                                    '(raw) Engagement[Campaign ID]' => '701Pl00000hB2yb',
+                                    '(raw) Engagement[Campaign Name]' => 'Test Campaign 1',
+                                    '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',
+                                    '(raw) Engagement[Start Date]' => '5/5/2025',
+                                ],
+                                [
+                                    '(raw) Engagement[Campaign ID]' => '701Pl00000hB3xc',
+                                    '(raw) Engagement[Campaign Name]' => 'Test Campaign 2',
+                                    '(raw) Engagement[Reporting Business Unit]' => 'North America',
+                                    '(raw) Engagement[Start Date]' => '5/10/2025',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
             ],
         ]),
     ]);
@@ -27,9 +45,11 @@ test('campaigns endpoint returns list of campaigns for authenticated user', func
     $response->assertOk()
         ->assertJson([
             'success' => true,
+        ])
+        ->assertJsonCount(2, 'data')
+        ->assertJsonStructure([
             'data' => [
-                ['id' => 'campaign-1', 'name' => 'Summer Sale'],
-                ['id' => 'campaign-2', 'name' => 'Newsletter May'],
+                '*' => ['id', 'name', 'business_unit', 'created_at'],
             ],
         ]);
 });
@@ -42,7 +62,7 @@ test('campaigns endpoint requires authentication', function () {
 
 test('campaigns endpoint returns error on service failure', function () {
     $this->mock(PowerBiService::class)
-        ->shouldReceive('getCampaigns')
+        ->shouldReceive('getUniqueCampaigns')
         ->once()
         ->andThrow(new Exception('Power BI API error'));
 
@@ -55,87 +75,100 @@ test('campaigns endpoint returns error on service failure', function () {
         ]);
 });
 
-test('campaign emails endpoint returns filtered emails', function () {
+test('campaign metrics endpoint returns aggregated metrics', function () {
     Http::fake([
         'login.microsoftonline.com/*' => Http::response(['access_token' => 'fake-token']),
-        'api.powerbi.com/*/SentEmails/rows' => Http::response([
-            'value' => [
+        'api.powerbi.com/*' => Http::response([
+            'results' => [
                 [
-                    'id' => 'email-1',
-                    'campaign_id' => 'campaign-1',
-                    'subject' => 'Welcome Email',
-                ],
-                [
-                    'id' => 'email-2',
-                    'campaign_id' => 'campaign-1',
-                    'subject' => 'Follow-up Email',
+                    'tables' => [
+                        [
+                            'rows' => [
+                                ['(raw) Engagement[Member Status]' => 'Sent'],
+                                ['(raw) Engagement[Member Status]' => 'Opened'],
+                                ['(raw) Engagement[Member Status]' => 'Clicked'],
+                                ['(raw) Engagement[Member Status]' => 'Bounced'],
+                            ],
+                        ],
+                    ],
                 ],
             ],
         ]),
     ]);
 
-    $response = $this->actingAs($this->user)->getJson(route('powerbi.campaign.emails', ['campaignId' => 'campaign-1']));
+    $response = $this->actingAs($this->user)->getJson(route('powerbi.campaign.metrics', ['campaignId' => '701Pl00000hB2yb']));
 
     $response->assertOk()
         ->assertJson([
             'success' => true,
-            'data' => [
-                ['id' => 'email-1', 'subject' => 'Welcome Email'],
-                ['id' => 'email-2', 'subject' => 'Follow-up Email'],
-            ],
+        ])
+        ->assertJsonStructure([
+            'data' => ['sent', 'delivered', 'opened', 'clicked', 'bounced', 'open_rate', 'click_rate', 'bounce_rate'],
         ]);
 });
 
-test('campaign emails endpoint requires authentication', function () {
-    $response = $this->getJson(route('powerbi.campaign.emails', ['campaignId' => 'campaign-1']));
+test('campaign metrics endpoint requires authentication', function () {
+    $response = $this->getJson(route('powerbi.campaign.metrics', ['campaignId' => '701Pl00000hB2yb']));
 
     $response->assertUnauthorized();
 });
 
-test('email analytics endpoint returns analytics data', function () {
+test('campaign members endpoint returns member list by status', function () {
     Http::fake([
         'login.microsoftonline.com/*' => Http::response(['access_token' => 'fake-token']),
-        'api.powerbi.com/*/EmailAnalytics/rows' => Http::response([
-            'value' => [
+        'api.powerbi.com/*' => Http::response([
+            'results' => [
                 [
-                    'email_id' => 'email-1',
-                    'bounces' => 5,
-                    'bounce_rate' => 2.5,
-                    'opens' => 150,
-                    'open_rate' => 75.0,
-                    'clicks' => 80,
-                    'click_rate' => 40.0,
+                    'tables' => [
+                        [
+                            'rows' => [
+                                [
+                                    '(raw) Engagement[Member ID]' => '00vPl00000UmUCI',
+                                    '(raw) Engagement[First Name]' => 'John',
+                                    '(raw) Engagement[Last Name]' => 'Doe',
+                                    '(raw) Engagement[Email]' => 'john@example.com',
+                                    '(raw) Engagement[Company]' => 'Test Corp',
+                                    '(raw) Engagement[Member Status Update Date]' => '5/19/2025',
+                                ],
+                            ],
+                        ],
+                    ],
                 ],
             ],
         ]),
     ]);
 
-    $response = $this->actingAs($this->user)->getJson(route('powerbi.email.analytics', ['emailId' => 'email-1']));
+    $response = $this->actingAs($this->user)->getJson(route('powerbi.campaign.members', [
+        'campaignId' => '701Pl00000hB2yb',
+        'status' => 'Opened',
+    ]));
 
     $response->assertOk()
         ->assertJson([
             'success' => true,
+        ])
+        ->assertJsonStructure([
             'data' => [
-                'bounces' => 5,
-                'opens' => 150,
-                'clicks' => 80,
+                '*' => ['member_id', 'first_name', 'last_name', 'email', 'company', 'status_update_date'],
             ],
         ]);
 });
 
-test('email analytics endpoint requires authentication', function () {
-    $response = $this->getJson(route('powerbi.email.analytics', ['emailId' => 'email-1']));
+test('campaign members endpoint requires authentication', function () {
+    $response = $this->getJson(route('powerbi.campaign.members', [
+        'campaignId' => '701Pl00000hB2yb',
+        'status' => 'Opened',
+    ]));
 
     $response->assertUnauthorized();
 });
 
 test('embed token endpoint returns token', function () {
-    Http::fake([
-        'login.microsoftonline.com/*' => Http::response(['access_token' => 'fake-token']),
-        'api.powerbi.com/*/GenerateToken' => Http::response([
-            'token' => 'embed-token-123',
-        ]),
-    ]);
+    $this->mock(PowerBiService::class)
+        ->shouldReceive('getEmbedToken')
+        ->once()
+        ->with('report-123')
+        ->andReturn('embed-token-123');
 
     $response = $this->actingAs($this->user)->getJson(route('powerbi.embed.token', ['reportId' => 'report-123']));
 

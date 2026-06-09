@@ -13,13 +13,7 @@ test('guests are redirected to the login page', function () {
 
 test('authenticated users can visit the dashboard', function () {
     $this->mock(PowerBiService::class)
-        ->shouldReceive('hasCredentials')
-        ->andReturn(true)
-        ->shouldReceive('getCampaigns')
-        ->once()
-        ->andReturn([
-            ['id' => 'campaign-1', 'name' => 'Test Campaign'],
-        ]);
+        ->shouldReceive('hasCredentials')->andReturn(false);
 
     $user = User::factory()->create();
     $this->actingAs($user);
@@ -28,25 +22,23 @@ test('authenticated users can visit the dashboard', function () {
     $response->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('dashboard')
-            ->has('campaigns', 1)
-            ->has('emails')
+            ->has('campaigns')
             ->has('lastUpdated')
-            ->where('isDemoMode', false)
         );
 });
 
 test('dashboard shows error message when Power BI service fails', function () {
     $this->mock(PowerBiService::class)
-        ->shouldReceive('hasCredentials')
-        ->andReturn(true)
-        ->shouldReceive('getCampaigns')
+        ->shouldReceive('hasCredentials')->andReturn(true)
+        ->shouldReceive('getUniqueCampaigns')
         ->once()
         ->andThrow(new Exception('Power BI API error'));
 
     $user = User::factory()->create();
     $this->actingAs($user);
 
-    $response = $this->get(route('dashboard'));
+    // Must pass region AND year to trigger getUniqueCampaigns
+    $response = $this->get(route('dashboard', ['region' => 'carib', 'year' => '2025']));
     $response->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('dashboard')
@@ -55,85 +47,69 @@ test('dashboard shows error message when Power BI service fails', function () {
         );
 });
 
-test('dashboard loads emails when campaign is selected', function () {
+test('dashboard loads campaigns when region and year are selected', function () {
     $this->mock(PowerBiService::class)
-        ->shouldReceive('hasCredentials')
-        ->andReturn(true)
-        ->shouldReceive('getCampaigns')
+        ->shouldReceive('hasCredentials')->andReturn(true)
+        ->shouldReceive('getUniqueCampaigns')
         ->once()
-        ->andReturn([
-            ['id' => 'campaign-1', 'name' => 'Test Campaign'],
-        ])
-        ->shouldReceive('getCampaignEmails')
-        ->once()
-        ->with('campaign-1')
         ->andReturn([
             [
-                'id' => 'email-1',
-                'campaign_id' => 'campaign-1',
-                'subject' => 'Test Email',
-                'from' => 'test@example.com',
-                'to' => 'user@example.com',
-                'sent_at' => '2026-05-14 12:00:00',
+                'campaign_id' => '701Pl00000hB2yb',
+                'campaign_name' => 'CARIB_JAM_2025_Test',
+                'business_unit' => 'CARIB',
+                'start_date' => '2025-05-01',
             ],
         ]);
 
     $user = User::factory()->create();
     $this->actingAs($user);
 
-    $response = $this->get(route('dashboard', ['campaign_id' => 'campaign-1']));
+    $response = $this->get(route('dashboard', ['region' => 'carib', 'year' => '2025']));
     $response->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('dashboard')
             ->has('campaigns', 1)
-            ->has('emails', 1)
-            ->where('selectedCampaignId', 'campaign-1')
+            ->where('selectedCampaignId', null)
         );
 });
 
-test('dashboard loads analytics when email is selected', function () {
+test('dashboard loads analytics when campaign is selected', function () {
+    $campaignId = '701Pl00000hB2yb';
+
     $this->mock(PowerBiService::class)
-        ->shouldReceive('hasCredentials')
-        ->andReturn(true)
-        ->shouldReceive('getCampaigns')
+        ->shouldReceive('hasCredentials')->andReturn(true)
+        ->shouldReceive('getUniqueCampaigns')
         ->once()
-        ->andReturn([
-            ['id' => 'campaign-1', 'name' => 'Test Campaign'],
-        ])
-        ->shouldReceive('getCampaignEmails')
-        ->once()
-        ->with('campaign-1')
         ->andReturn([
             [
-                'id' => 'email-1',
-                'campaign_id' => 'campaign-1',
-                'subject' => 'Test Email',
+                'campaign_id' => $campaignId,
+                'campaign_name' => 'CARIB_JAM_2025_Test',
+                'business_unit' => 'CARIB',
+                'start_date' => '2025-05-01',
             ],
         ])
-        ->shouldReceive('getEmailAnalytics')
+        ->shouldReceive('getEngagementsByCampaign')
         ->once()
-        ->with('email-1')
+        ->with($campaignId)
         ->andReturn([
-            'bounces' => 5,
-            'bounce_rate' => 2.5,
-            'opens' => 150,
-            'open_rate' => 75.0,
-            'clicks' => 80,
-            'click_rate' => 40.0,
+            ['(raw) Engagement[Member Status]' => 'Opened'],
+            ['(raw) Engagement[Member Status]' => 'Opened'],
+            ['(raw) Engagement[Member Status]' => 'Clicked'],
+            ['(raw) Engagement[Member Status]' => 'Bounced'],
         ]);
 
     $user = User::factory()->create();
     $this->actingAs($user);
 
     $response = $this->get(route('dashboard', [
-        'campaign_id' => 'campaign-1',
-        'email_id' => 'email-1',
+        'region' => 'carib',
+        'year' => '2025',
+        'campaign_id' => $campaignId,
     ]));
     $response->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('dashboard')
             ->has('analytics')
-            ->where('selectedCampaignId', 'campaign-1')
-            ->where('selectedEmailId', 'email-1')
+            ->where('selectedCampaignId', $campaignId)
         );
 });

@@ -46,6 +46,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Query Cache TTL
+    |--------------------------------------------------------------------------
+    |
+    | Seconds to cache Power BI query results in the database cache.
+    | Set to 0 to disable caching. Default: 30 minutes.
+    | Override per environment: POWERBI_CACHE_TTL=3600
+    |
+    */
+
+    'cache_ttl' => env('POWERBI_CACHE_TTL', 30 * 60),
+
+    /*
+    |--------------------------------------------------------------------------
     | API Endpoints
     |--------------------------------------------------------------------------
     |

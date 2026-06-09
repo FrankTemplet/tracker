@@ -10,6 +10,7 @@ import { Layers } from 'lucide-react';
 export interface Campaign {
     id: string;
     name: string;
+    business_unit: string;
     created_at: string;
 }
 
@@ -18,6 +19,7 @@ interface CampaignSelectorProps {
     selectedCampaignId?: string;
     onCampaignChange: (campaignId: string) => void;
     isLoading?: boolean;
+    isDisabled?: boolean;
 }
 
 export function CampaignSelector({
@@ -25,9 +27,18 @@ export function CampaignSelector({
     selectedCampaignId,
     onCampaignChange,
     isLoading = false,
+    isDisabled = false,
 }: CampaignSelectorProps) {
+    const placeholder = isLoading
+        ? 'Loading...'
+        : isDisabled
+          ? 'Select region & year first'
+          : campaigns.length === 0
+            ? 'No campaigns found'
+            : 'Select a campaign';
+
     return (
-        <div className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm">
+        <div className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm flex-1 min-w-52">
             <div className="rounded-lg bg-primary/10 p-1.5 shrink-0">
                 <Layers className="h-4 w-4 text-primary" />
             </div>
@@ -36,18 +47,10 @@ export function CampaignSelector({
                 <Select
                     value={selectedCampaignId}
                     onValueChange={onCampaignChange}
-                    disabled={isLoading || campaigns.length === 0}
+                    disabled={isLoading || isDisabled || campaigns.length === 0}
                 >
                     <SelectTrigger className="h-7 border-0 p-0 shadow-none bg-transparent font-medium focus:ring-0 focus:ring-offset-0 text-sm">
-                        <SelectValue
-                            placeholder={
-                                isLoading
-                                    ? 'Loading campaigns...'
-                                    : campaigns.length === 0
-                                      ? 'No campaigns available'
-                                      : 'Select a campaign'
-                            }
-                        />
+                        <SelectValue placeholder={placeholder} />
                     </SelectTrigger>
                     <SelectContent>
                         {campaigns.map((campaign) => (

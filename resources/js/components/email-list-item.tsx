@@ -5,8 +5,6 @@ export interface Email {
     id: string;
     campaign_id: string;
     subject: string;
-    from: string;
-    to: string;
     sent_at: string;
 }
 
@@ -61,9 +59,6 @@ export function EmailListItem({
                         )}
                     >
                         {email.subject}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate mt-1">
-                        {email.from}
                     </p>
                     <div className="flex items-center gap-1 mt-2">
                         <Clock className="h-3 w-3 text-muted-foreground/70 shrink-0" />

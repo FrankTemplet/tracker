@@ -1,65 +1,44 @@
-import { Head, router, usePage } from '@inertiajs/react';
-import { useState, useEffect } from 'react';
+import { Head, router } from '@inertiajs/react';
+import { useState } from 'react';
 import { CampaignSelector, type Campaign } from '@/components/campaign-selector';
 import { CampaignFilters, type Region } from '@/components/campaign-filters';
-import { EmailListItem, type Email } from '@/components/email-list-item';
-import { EmailDetailsPanel } from '@/components/email-details-panel';
-import { EmailAnalytics, type EmailAnalyticsData } from '@/components/email-analytics';
-import { EngagementSection, type EngagementData } from '@/components/engagement-section';
+import { CampaignMetrics, type CampaignMetricsData, type MemberStatus } from '@/components/campaign-metrics';
+import { MemberListPanel, type Member } from '@/components/member-list-panel';
 import { RefreshIndicator } from '@/components/refresh-indicator';
 import { DashboardSkeleton } from '@/components/dashboard-skeleton';
+import { Button } from '@/components/ui/button';
 import { dashboard } from '@/routes';
-import { Mail } from 'lucide-react';
-
-interface BouncesOpensData {
-    bounces: number;
-    opens: number;
-}
+import { Mail, X } from 'lucide-react';
 
 interface DashboardProps {
     campaigns?: Campaign[];
-    emails?: Email[];
     selectedCampaignId?: string;
-    selectedEmailId?: string;
     selectedRegion?: Region;
     selectedYear?: string;
-    analytics?: EmailAnalyticsData;
-    bouncesOpens?: BouncesOpensData;
-    engagement?: EngagementData;
+    analytics?: CampaignMetricsData;
     lastUpdated?: string;
+    error?: string;
 }
 
 export default function Dashboard({
     campaigns = [],
-    emails = [],
     selectedCampaignId,
-    selectedEmailId,
     selectedRegion,
     selectedYear,
     analytics,
-    bouncesOpens,
-    engagement,
     lastUpdated,
 }: DashboardProps) {
     const [isLoading, setIsLoading] = useState(false);
-    const [pendingEmailId, setPendingEmailId] = useState<string | null>(null);
-    const [selectedEmail, setSelectedEmail] = useState<Email | null>(
-        emails.find((e) => e.id === selectedEmailId) || null
-    );
+    const [members, setMembers] = useState<Member[]>([]);
+    const [selectedMemberStatus, setSelectedMemberStatus] = useState<MemberStatus | null>(null);
+    const [isLoadingMembers, setIsLoadingMembers] = useState(false);
 
     const lastUpdatedDate = lastUpdated ? new Date(lastUpdated) : new Date();
 
-    useEffect(() => {
-        if (selectedEmailId) {
-            const email = emails.find((e) => e.id === selectedEmailId);
-            setSelectedEmail(email || null);
-        } else if (emails.length > 0 && !selectedEmail) {
-            handleEmailSelect(emails[0]);
-        }
-    }, [emails, selectedEmailId]);
-
     const handleRegionChange = (region: Region) => {
         setIsLoading(true);
+        setMembers([]);
+        setSelectedMemberStatus(null);
         router.get(
             dashboard(),
             { region, year: selectedYear },
@@ -67,16 +46,15 @@ export default function Dashboard({
                 preserveState: true,
                 preserveScroll: true,
                 only: ['campaigns', 'selectedRegion', 'selectedYear', 'lastUpdated'],
-                onFinish: () => {
-                    setIsLoading(false);
-                    setSelectedEmail(null);
-                },
-            }
+                onFinish: () => setIsLoading(false),
+            },
         );
     };
 
     const handleYearChange = (year: string) => {
         setIsLoading(true);
+        setMembers([]);
+        setSelectedMemberStatus(null);
         router.get(
             dashboard(),
             { region: selectedRegion, year },
@@ -84,53 +62,55 @@ export default function Dashboard({
                 preserveState: true,
                 preserveScroll: true,
                 only: ['campaigns', 'selectedRegion', 'selectedYear', 'lastUpdated'],
-                onFinish: () => {
-                    setIsLoading(false);
-                    setSelectedEmail(null);
-                },
-            }
+                onFinish: () => setIsLoading(false),
+            },
         );
     };
 
     const handleCampaignChange = (campaignId: string) => {
         setIsLoading(true);
+        setMembers([]);
+        setSelectedMemberStatus(null);
         router.get(
             dashboard(),
             { region: selectedRegion, year: selectedYear, campaign_id: campaignId },
             {
                 preserveState: true,
                 preserveScroll: true,
-                only: ['emails', 'selectedCampaignId', 'lastUpdated'],
-                onFinish: () => {
-                    setIsLoading(false);
-                    setSelectedEmail(null);
-                },
-            }
+                only: ['analytics', 'selectedCampaignId', 'lastUpdated'],
+                onFinish: () => setIsLoading(false),
+            },
         );
     };
 
-    const handleEmailSelect = (email: Email) => {
-        setSelectedEmail(email);
-        setPendingEmailId(email.id);
-        setIsLoading(true);
-        router.get(
-            dashboard(),
-            {
-                region: selectedRegion,
-                year: selectedYear,
-                campaign_id: selectedCampaignId,
-                email_id: email.id,
-            },
-            {
-                preserveState: true,
-                preserveScroll: true,
-                only: ['analytics', 'bouncesOpens', 'engagement', 'selectedEmailId', 'lastUpdated'],
-                onFinish: () => {
-                    setIsLoading(false);
-                    setPendingEmailId(null);
-                },
+    const handleMetricClick = async (status: MemberStatus) => {
+        if (!selectedCampaignId) return;
+        setSelectedMemberStatus(status);
+        setIsLoadingMembers(true);
+        setMembers([]);
+        try {
+            const response = await fetch(`/api/powerbi/campaigns/${selectedCampaignId}/members/${status}`);
+            const data = await response.json();
+            if (data.success) {
+                setMembers(data.data);
             }
-        );
+        } catch {
+            // member fetch failed silently — panel stays open showing 0 results
+        } finally {
+            setIsLoadingMembers(false);
+        }
+    };
+
+    const handleCloseMembers = () => {
+        setMembers([]);
+        setSelectedMemberStatus(null);
+    };
+
+    const handleClear = () => {
+        setIsLoading(true);
+        setMembers([]);
+        setSelectedMemberStatus(null);
+        router.get(dashboard(), {}, { onFinish: () => setIsLoading(false) });
     };
 
     const filtersSelected = selectedRegion && selectedYear;
@@ -147,133 +127,72 @@ export default function Dashboard({
                             Monitor your email campaigns and analytics
                         </p>
                     </div>
-                    <RefreshIndicator
-                        lastUpdated={lastUpdatedDate}
-                        isRefreshing={isLoading}
-                    />
+                    <RefreshIndicator lastUpdated={lastUpdatedDate} isRefreshing={isLoading} />
                 </div>
 
-                {/* Filters */}
-                <div className="w-full max-w-2xl">
+                {/* Filter Row — Region + Year + Campaign + Clear all in one line */}
+                <div className="flex flex-wrap items-stretch gap-3">
                     <CampaignFilters
                         selectedRegion={selectedRegion}
                         selectedYear={selectedYear}
                         onRegionChange={handleRegionChange}
                         onYearChange={handleYearChange}
                     />
+                    <CampaignSelector
+                        campaigns={campaigns}
+                        selectedCampaignId={selectedCampaignId}
+                        onCampaignChange={handleCampaignChange}
+                        isLoading={isLoading}
+                        isDisabled={!filtersSelected}
+                    />
+                    {(selectedRegion || selectedCampaignId) && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleClear}
+                            className="self-center gap-1.5"
+                        >
+                            <X className="h-3.5 w-3.5" />
+                            Clear
+                        </Button>
+                    )}
                 </div>
 
-                {/* Show message if filters not selected */}
-                {!filtersSelected ? (
-                    <div className="flex-1 flex items-center justify-center">
-                        <div className="text-center space-y-3">
-                            <div className="mx-auto rounded-full bg-muted p-5 w-fit">
-                                <Mail className="h-8 w-8 text-muted-foreground" />
-                            </div>
-                            <h2 className="text-xl font-semibold">Select Filters</h2>
-                            <p className="text-sm text-muted-foreground max-w-sm">
-                                Please select a region and year to view available campaigns
-                            </p>
-                        </div>
-                    </div>
-                ) : campaigns.length === 0 && !isLoading ? (
-                    <div className="flex-1 flex items-center justify-center">
-                        <div className="text-center space-y-3">
-                            <div className="mx-auto rounded-full bg-muted p-5 w-fit">
-                                <Mail className="h-8 w-8 text-muted-foreground" />
-                            </div>
-                            <h2 className="text-xl font-semibold">No Campaigns Available</h2>
-                            <p className="text-sm text-muted-foreground max-w-sm">
-                                No campaigns found for the selected region and year
-                            </p>
-                        </div>
-                    </div>
-                ) : (
-                    <>
-                        {/* Campaign Selector */}
-                        <div className="w-full max-w-sm">
-                            <CampaignSelector
-                                campaigns={campaigns}
-                                selectedCampaignId={selectedCampaignId}
-                                onCampaignChange={handleCampaignChange}
+                {/* Metrics — only when a campaign is selected */}
+                {selectedCampaignId && (
+                    isLoading && !analytics ? (
+                        <DashboardSkeleton />
+                    ) : (
+                        <div className="flex flex-col gap-4">
+                            <CampaignMetrics
+                                metrics={analytics ?? null}
                                 isLoading={isLoading}
+                                onMetricClick={handleMetricClick}
                             />
+                            {selectedMemberStatus && (
+                                <MemberListPanel
+                                    members={members}
+                                    status={selectedMemberStatus}
+                                    isLoading={isLoadingMembers}
+                                    onClose={handleCloseMembers}
+                                />
+                            )}
                         </div>
-
-                        {/* Main Content */}
-                        {!selectedCampaignId ? (
-                            <div className="flex-1 flex items-center justify-center">
-                                <div className="text-center space-y-2">
-                                    <div className="mx-auto rounded-full bg-muted p-4 w-fit">
-                                        <Mail className="h-6 w-6 text-muted-foreground" />
-                                    </div>
-                                    <p className="text-sm text-muted-foreground">
-                                        Select a campaign to view emails
-                                    </p>
-                                </div>
-                            </div>
-                        ) : isLoading && emails.length === 0 ? (
-                            <DashboardSkeleton />
-                        ) : (
-                            <div className="flex flex-1 gap-4 overflow-hidden min-h-0">
-                                {/* Email List */}
-                                <div className="w-72 shrink-0 flex flex-col min-h-0">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h2 className="text-sm font-semibold text-foreground">Sent Emails</h2>
-                                        <span className="text-xs text-muted-foreground bg-muted rounded-full px-2 py-0.5 font-medium">
-                                            {emails.length}
-                                        </span>
-                                    </div>
-                                    <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                                        {emails.length === 0 ? (
-                                            <div className="flex flex-col items-center justify-center py-12 gap-2">
-                                                <Mail className="h-5 w-5 text-muted-foreground/50" />
-                                                <p className="text-xs text-muted-foreground text-center">
-                                                    No emails found for this campaign
-                                                </p>
-                                            </div>
-                                        ) : (
-                                            emails.map((email) => (
-                                                <EmailListItem
-                                                    key={email.id}
-                                                    email={email}
-                                                    isSelected={selectedEmail?.id === email.id}
-                                                    onClick={() => handleEmailSelect(email)}
-                                                />
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Right Panel */}
-                                <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-y-auto">
-                                    <div className="shrink-0">
-                                        <EmailDetailsPanel email={selectedEmail} />
-                                    </div>
-                                    <div className="shrink-0">
-                                        <EmailAnalytics
-                                            key={selectedEmail?.id ?? 'no-email'}
-                                            analytics={pendingEmailId ? null : (analytics || null)}
-                                            bouncesOpens={pendingEmailId ? null : (bouncesOpens || null)}
-                                            isLoading={isLoading && !!selectedEmail}
-                                        />
-                                    </div>
-                                    <div className="shrink-0">
-                                        <EngagementSection
-                                            key={selectedEmail?.id ?? 'no-email'}
-                                            engagement={pendingEmailId ? null : (engagement || null)}
-                                            isLoading={isLoading && !!selectedEmail}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </>
+                    )
                 )}
             </div>
         </>
     );
 }
+
+Dashboard.layout = {
+    breadcrumbs: [
+        {
+            title: 'Dashboard',
+            href: dashboard(),
+        },
+    ],
+};
 
 Dashboard.layout = {
     breadcrumbs: [

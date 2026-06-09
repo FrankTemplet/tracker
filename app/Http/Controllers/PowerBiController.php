@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Services\FakePowerBiData;
 use App\Services\PowerBiDataTransformer;
 use App\Services\PowerBiService;
 use Illuminate\Http\JsonResponse;
@@ -25,29 +24,18 @@ class PowerBiController extends Controller
         $selectedRegion = $request->query('region');
         $selectedYear = $request->query('year');
         $selectedCampaignId = $request->query('campaign_id');
-        $selectedEmailId = $request->query('email_id');
 
         try {
             $campaigns = [];
 
             // Only fetch campaigns if both region and year are selected
             if ($selectedRegion && $selectedYear) {
-                // Fetch campaigns from Power BI and filter by those that have email data
-                $rawCampaigns = $this->powerBiService->getCampaigns();
-                $allCampaigns = PowerBiDataTransformer::deduplicateCampaigns(
-                    PowerBiDataTransformer::transformCampaigns($rawCampaigns)
-                );
-
-                // Get unique campaign names that have email data
-                $emailCampaignNames = $this->powerBiService->getEmailCampaignNames();
-
-                // Filter campaigns to only those with email data
-                $filteredCampaigns = array_filter($allCampaigns, function ($campaign) use ($emailCampaignNames) {
-                    return in_array($campaign['id'], $emailCampaignNames);
-                });
+                // Fetch unique campaigns from Power BI (already deduplicated)
+                $rawCampaigns = $this->powerBiService->getUniqueCampaigns();
+                $allCampaigns = PowerBiDataTransformer::transformCampaigns($rawCampaigns);
 
                 // Filter by region and year
-                $campaigns = array_values(array_filter($filteredCampaigns, function ($campaign) use ($selectedRegion, $selectedYear) {
+                $campaigns = array_values(array_filter($allCampaigns, function ($campaign) use ($selectedRegion, $selectedYear) {
                     $campaignName = strtolower($campaign['name']);
                     $region = strtolower($selectedRegion);
 
@@ -61,48 +49,29 @@ class PowerBiController extends Controller
                 }));
             }
 
-            $emails = [];
             $analytics = null;
-            $bouncesOpens = null;
             $engagement = null;
 
-            // If a campaign is selected, fetch its emails
+            // If a campaign is selected, calculate its metrics from engagements
             if ($selectedCampaignId) {
-                $rawEmails = $this->powerBiService->getCampaignEmails($selectedCampaignId);
-                $emails = PowerBiDataTransformer::transformEmails($rawEmails);
-            }
+                $rawEngagements = $this->powerBiService->getEngagementsByCampaign($selectedCampaignId);
+                $analytics = PowerBiDataTransformer::aggregateCampaignMetrics($rawEngagements);
 
-            // If an email is selected, find it and extract analytics
-            if ($selectedEmailId && count($emails) > 0) {
-                $selectedEmail = collect($emails)->firstWhere('id', $selectedEmailId);
-                if ($selectedEmail) {
-                    // Find the raw email data to extract analytics
-                    $rawEmails = $this->powerBiService->getCampaignEmails($selectedCampaignId);
-                    $rawEmail = collect($rawEmails)->first(function ($email) use ($selectedEmailId) {
-                        return PowerBiDataTransformer::stableEmailId($email) === $selectedEmailId;
-                    });
-                    if ($rawEmail) {
-                        $analytics = PowerBiDataTransformer::extractEmailAnalytics($rawEmail);
-                        $bouncesOpens = [
-                            'bounces' => $analytics['bounces'],
-                            'opens' => $analytics['opens'],
-                        ];
-                    }
-
-                    // TODO: Replace with real endpoint when engagement data is available
-                    $engagement = FakePowerBiData::getEngagementData($selectedEmailId);
-                }
+                // Transform engagement metrics into expected format
+                $engagement = [
+                    'opened' => $analytics['opened'],
+                    'clicked' => $analytics['clicked'],
+                    'bounced' => $analytics['bounced'],
+                    'sent' => $analytics['sent'],
+                ];
             }
 
             return Inertia::render('dashboard', [
                 'campaigns' => $campaigns,
-                'emails' => $emails,
                 'selectedCampaignId' => $selectedCampaignId,
-                'selectedEmailId' => $selectedEmailId,
                 'selectedRegion' => $selectedRegion,
                 'selectedYear' => $selectedYear,
                 'analytics' => $analytics,
-                'bouncesOpens' => $bouncesOpens,
                 'engagement' => $engagement,
                 'lastUpdated' => now()->toIso8601String(),
             ]);
@@ -115,9 +84,7 @@ class PowerBiController extends Controller
 
             return Inertia::render('dashboard', [
                 'campaigns' => [],
-                'emails' => [],
                 'selectedCampaignId' => $selectedCampaignId,
-                'selectedEmailId' => $selectedEmailId,
                 'selectedRegion' => $selectedRegion,
                 'selectedYear' => $selectedYear,
                 'error' => 'Failed to load dashboard data. Please try again later.',
@@ -131,18 +98,9 @@ class PowerBiController extends Controller
     public function campaigns(): JsonResponse
     {
         try {
-            $rawCampaigns = $this->powerBiService->getCampaigns();
-            $allCampaigns = PowerBiDataTransformer::deduplicateCampaigns(
-                PowerBiDataTransformer::transformCampaigns($rawCampaigns)
-            );
-
-            // Get unique campaign names that have email data
-            $emailCampaignNames = $this->powerBiService->getEmailCampaignNames();
-
-            // Filter campaigns to only those with email data
-            $campaigns = array_values(array_filter($allCampaigns, function ($campaign) use ($emailCampaignNames) {
-                return in_array($campaign['id'], $emailCampaignNames);
-            }));
+            // Fetch unique campaigns from Power BI (already deduplicated)
+            $rawCampaigns = $this->powerBiService->getUniqueCampaigns();
+            $campaigns = PowerBiDataTransformer::transformCampaigns($rawCampaigns);
 
             return response()->json([
                 'success' => true,
@@ -161,58 +119,54 @@ class PowerBiController extends Controller
     }
 
     /**
-     * Get sent emails for a specific campaign.
+     * Get aggregated metrics for a specific campaign.
      */
-    public function campaignEmails(string $campaignName): JsonResponse
+    public function campaignMetrics(string $campaignId): JsonResponse
     {
         try {
-            $rawEmails = $this->powerBiService->getCampaignEmails($campaignName);
-            $emails = PowerBiDataTransformer::transformEmails($rawEmails);
+            $rawEngagements = $this->powerBiService->getEngagementsByCampaign($campaignId);
+            $metrics = PowerBiDataTransformer::aggregateCampaignMetrics($rawEngagements);
 
             return response()->json([
                 'success' => true,
-                'data' => $emails,
+                'data' => $metrics,
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to fetch campaign emails', [
-                'campaign_name' => $campaignName,
+            Log::error('Failed to fetch campaign metrics', [
+                'campaign_id' => $campaignId,
                 'error' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to fetch emails. Please try again later.',
+                'message' => 'Failed to fetch metrics. Please try again later.',
             ], 500);
         }
     }
 
     /**
-     * Get analytics for a specific email.
+     * Get members with a specific status for a campaign (drill-down).
      */
-    public function emailAnalytics(string $emailId): JsonResponse
+    public function campaignMembers(string $campaignId, string $status): JsonResponse
     {
         try {
-            // This would need more context to work properly in a real scenario
+            $members = $this->powerBiService->getMembersByStatus($campaignId, $status);
+            $transformedMembers = PowerBiDataTransformer::transformMemberDetails($members);
+
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'bounces' => 0,
-                    'bounce_rate' => 0.0,
-                    'opens' => 0,
-                    'open_rate' => 0.0,
-                    'clicks' => 0,
-                    'click_rate' => 0.0,
-                ],
+                'data' => $transformedMembers,
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to fetch email analytics', [
-                'email_id' => $emailId,
+            Log::error('Failed to fetch campaign members', [
+                'campaign_id' => $campaignId,
+                'status' => $status,
                 'error' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to fetch analytics. Please try again later.',
+                'message' => 'Failed to fetch members. Please try again later.',
             ], 500);
         }
     }

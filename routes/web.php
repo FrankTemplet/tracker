@@ -15,8 +15,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Power BI API endpoints
     Route::prefix('api/powerbi')->name('powerbi.')->middleware('throttle:60,1')->group(function () {
         Route::get('campaigns', [PowerBiController::class, 'campaigns'])->name('campaigns');
-        Route::get('campaigns/{campaignId}/emails', [PowerBiController::class, 'campaignEmails'])->name('campaign.emails');
-        Route::get('emails/{emailId}/analytics', [PowerBiController::class, 'emailAnalytics'])->name('email.analytics');
+        Route::get('campaigns/{campaignId}/metrics', [PowerBiController::class, 'campaignMetrics'])->name('campaign.metrics');
+        Route::get('campaigns/{campaignId}/members/{status}', [PowerBiController::class, 'campaignMembers'])->name('campaign.members');
         Route::get('embed-token/{reportId}', [PowerBiController::class, 'embedToken'])->name('embed.token');
     });
 });

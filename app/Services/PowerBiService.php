@@ -46,160 +46,199 @@ class PowerBiService
     }
 
     /**
-     * Get available email campaigns from the Power BI dataset using DAX query.
+     * Get all engagement records from Power BI dataset.
+     * These are granular records (one per member per campaign).
      *
      * @return array<int, array>
      */
-    public function getCampaigns(): array
+    public function getAllEngagements(): array
     {
         // Use fake data if credentials are not configured
         if (! $this->hasCredentials()) {
-            return FakePowerBiData::getCampaigns();
+            return FakePowerBiData::getAllEngagements();
         }
 
-        $token = $this->getAccessToken();
-        $url = $this->buildExecuteQueriesUrl();
+        return Cache::remember('powerbi_all_engagements', $this->cacheTtl(), function () {
+            $token = $this->getAccessToken();
+            $url = $this->buildExecuteQueriesUrl();
 
-        $body = [
-            'queries' => [
-                [
-                    'query' => "EVALUATE VALUES('REPORT - Campaign Tracker')",
+            $body = [
+                'queries' => [
+                    [
+                        'query' => "EVALUATE '(raw) Engagement'",
+                    ],
                 ],
-            ],
-            'serializerSettings' => [
-                'includeNulls' => true,
-            ],
-        ];
-
-        $response = Http::withToken($token)->post($url, $body);
-
-        if ($response->failed()) {
-            Log::error('Failed to fetch campaigns from Power BI', [
-                'status' => $response->status(),
-                'body' => $response->body(),
-            ]);
-
-            throw new \Exception('Failed to fetch campaigns: '.$response->status());
-        }
-
-        return $this->parsePowerBiResponse($response->json());
-    }
-
-    /**
-     * Get sent emails for a specific campaign using DAX query.
-     *
-     * @return array<int, array>
-     */
-    public function getCampaignEmails(string $campaignName): array
-    {
-        // Use fake data if credentials are not configured
-        if (! $this->hasCredentials()) {
-            return FakePowerBiData::getCampaignEmails($campaignName);
-        }
-
-        $token = $this->getAccessToken();
-        $url = $this->buildExecuteQueriesUrl();
-
-        $body = [
-            'queries' => [
-                [
-                    'query' => "EVALUATE FILTER('(raw email) Campaign%20Outcomes%20AllLiberty', '(raw email) Campaign%20Outcomes%20AllLiberty'[Campaign Name] = \"$campaignName\")",
+                'serializerSettings' => [
+                    'includeNulls' => true,
                 ],
-            ],
-            'serializerSettings' => [
-                'includeNulls' => true,
-            ],
-        ];
+            ];
 
-        $response = Http::withToken($token)->post($url, $body);
+            $response = Http::withToken($token)->post($url, $body);
 
-        if ($response->failed()) {
-            Log::error('Failed to fetch campaign emails from Power BI', [
-                'status' => $response->status(),
-                'body' => $response->body(),
-            ]);
+            if ($response->failed()) {
+                Log::error('Failed to fetch engagements from Power BI', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
 
-            throw new \Exception('Failed to fetch campaign emails: '.$response->status());
-        }
-
-        return $this->parsePowerBiResponse($response->json());
-    }
-
-    /**
-     * Get all unique campaign names that have email data.
-     *
-     * @return array<int, string>
-     */
-    public function getEmailCampaignNames(): array
-    {
-        // Use fake data if credentials are not configured
-        if (! $this->hasCredentials()) {
-            return array_unique(array_map(
-                fn ($campaign) => $campaign['id'],
-                FakePowerBiData::getCampaigns()
-            ));
-        }
-
-        $token = $this->getAccessToken();
-        $url = $this->buildExecuteQueriesUrl();
-
-        $body = [
-            'queries' => [
-                [
-                    'query' => "EVALUATE VALUES('(raw email) Campaign%20Outcomes%20AllLiberty'[Campaign Name])",
-                ],
-            ],
-            'serializerSettings' => [
-                'includeNulls' => true,
-            ],
-        ];
-
-        $response = Http::withToken($token)->post($url, $body);
-
-        if ($response->failed()) {
-            Log::error('Failed to fetch email campaign names from Power BI', [
-                'status' => $response->status(),
-                'body' => $response->body(),
-            ]);
-
-            throw new \Exception('Failed to fetch email campaign names: '.$response->status());
-        }
-
-        $rows = $this->parsePowerBiResponse($response->json());
-        $names = [];
-
-        foreach ($rows as $row) {
-            $name = $row['(raw email) Campaign%20Outcomes%20AllLiberty[Campaign Name]'] ?? null;
-            if ($name && ! in_array($name, $names)) {
-                $names[] = $name;
+                throw new \Exception('Failed to fetch engagements: '.$response->status());
             }
-        }
 
-        return $names;
+            return $this->parsePowerBiResponse($response->json());
+        });
     }
 
     /**
-     * Get analytics for a specific email.
+     * Get all engagement records for a specific campaign.
      *
-     * @return array{bounces: int, bounce_rate: float, opens: int, open_rate: float, clicks: int, click_rate: float}
+     * @return array<int, array>
      */
-    public function getEmailAnalytics(string $emailId): array
+    public function getEngagementsByCampaign(string $campaignId): array
     {
         // Use fake data if credentials are not configured
         if (! $this->hasCredentials()) {
-            return FakePowerBiData::getEmailAnalytics($emailId);
+            return FakePowerBiData::getEngagementsByCampaign($campaignId);
         }
 
-        // For now, extract analytics from email data
-        // In production, you might want a separate query or table
-        return [
-            'bounces' => 0,
-            'bounce_rate' => 0.0,
-            'opens' => 0,
-            'open_rate' => 0.0,
-            'clicks' => 0,
-            'click_rate' => 0.0,
-        ];
+        $cacheKey = 'powerbi_engagements_'.md5($campaignId);
+
+        return Cache::remember($cacheKey, $this->cacheTtl(), function () use ($campaignId) {
+            $token = $this->getAccessToken();
+            $url = $this->buildExecuteQueriesUrl();
+
+            $body = [
+                'queries' => [
+                    [
+                        'query' => "EVALUATE FILTER('(raw) Engagement', '(raw) Engagement'[Campaign ID] = \"$campaignId\")",
+                    ],
+                ],
+                'serializerSettings' => [
+                    'includeNulls' => true,
+                ],
+            ];
+
+            $response = Http::withToken($token)->post($url, $body);
+
+            if ($response->failed()) {
+                Log::error('Failed to fetch campaign engagements from Power BI', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
+                throw new \Exception('Failed to fetch campaign engagements: '.$response->status());
+            }
+
+            return $this->parsePowerBiResponse($response->json());
+        });
+    }
+
+    /**
+     * Get members with a specific status for a campaign.
+     * Used for drilling down into metrics (e.g., "who opened this email?").
+     *
+     * @param  string  $campaignId  Campaign ID
+     * @param  string  $status  Member Status (Opened, Clicked, Bounced, Sent, etc.)
+     * @return array<int, array{member_id: string, first_name: string, last_name: string, email: string, company: string, status_update_date: string}>
+     */
+    public function getMembersByStatus(string $campaignId, string $status): array
+    {
+        // Use fake data if credentials are not configured
+        if (! $this->hasCredentials()) {
+            return FakePowerBiData::getMembersByStatus($campaignId, $status);
+        }
+
+        $cacheKey = 'powerbi_members_'.md5($campaignId.'_'.$status);
+
+        $rows = Cache::remember($cacheKey, $this->cacheTtl(), function () use ($campaignId, $status) {
+            $token = $this->getAccessToken();
+            $url = $this->buildExecuteQueriesUrl();
+
+            $body = [
+                'queries' => [
+                    [
+                        'query' => "EVALUATE FILTER('(raw) Engagement', AND('(raw) Engagement'[Campaign ID] = \"$campaignId\", '(raw) Engagement'[Member Status] = \"$status\"))",
+                    ],
+                ],
+                'serializerSettings' => [
+                    'includeNulls' => true,
+                ],
+            ];
+
+            $response = Http::withToken($token)->post($url, $body);
+
+            if ($response->failed()) {
+                Log::error('Failed to fetch members by status from Power BI', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
+                throw new \Exception('Failed to fetch members by status: '.$response->status());
+            }
+
+            return $this->parsePowerBiResponse($response->json());
+        });
+
+        return array_map(function ($row) {
+            return [
+                'member_id' => $row['(raw) Engagement[Member ID]'] ?? '',
+                'first_name' => $row['(raw) Engagement[First Name]'] ?? '',
+                'last_name' => $row['(raw) Engagement[Last Name]'] ?? '',
+                'email' => $row['(raw) Engagement[Email]'] ?? '',
+                'company' => $row['(raw) Engagement[Company]'] ?? '',
+                'status_update_date' => $row['(raw) Engagement[Member Status Update Date]'] ?? '',
+            ];
+        }, $rows);
+    }
+
+    /**
+     * Get all unique campaigns from engagement data.
+     *
+     * @return array<int, array{campaign_id: string, campaign_name: string, business_unit: string, start_date: string}>
+     */
+    public function getUniqueCampaigns(): array
+    {
+        // Use fake data if credentials are not configured
+        if (! $this->hasCredentials()) {
+            return FakePowerBiData::getUniqueCampaigns();
+        }
+
+        return Cache::remember('powerbi_campaigns', $this->cacheTtl(), function () {
+            $token = $this->getAccessToken();
+            $url = $this->buildExecuteQueriesUrl();
+
+            $body = [
+                'queries' => [
+                    [
+                        'query' => "EVALUATE SUMMARIZECOLUMNS('(raw) Engagement'[Campaign ID], '(raw) Engagement'[Campaign Name], '(raw) Engagement'[Reporting Business Unit], '(raw) Engagement'[Start Date])",
+                    ],
+                ],
+                'serializerSettings' => [
+                    'includeNulls' => true,
+                ],
+            ];
+
+            $response = Http::withToken($token)->post($url, $body);
+
+            if ($response->failed()) {
+                Log::error('Failed to fetch unique campaigns from Power BI', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
+                throw new \Exception('Failed to fetch unique campaigns: '.$response->status());
+            }
+
+            $rows = $this->parsePowerBiResponse($response->json());
+
+            return array_map(function ($row) {
+                return [
+                    'campaign_id' => $row['(raw) Engagement[Campaign ID]'] ?? '',
+                    'campaign_name' => $row['(raw) Engagement[Campaign Name]'] ?? '',
+                    'business_unit' => $row['(raw) Engagement[Reporting Business Unit]'] ?? '',
+                    'start_date' => $row['(raw) Engagement[Start Date]'] ?? '',
+                ];
+            }, $rows);
+        });
     }
 
     /**
@@ -235,6 +274,37 @@ class PowerBiService
     }
 
     /**
+     * Get embed token for a specific Power BI report.
+     * This allows embedding Power BI reports in the application.
+     */
+    public function getEmbedToken(string $reportId): string
+    {
+        if (! $this->hasCredentials()) {
+            throw new \Exception('Power BI credentials not configured');
+        }
+
+        $token = $this->getAccessToken();
+        $workspaceId = config('powerbi.workspace_id');
+
+        $url = "https://api.powerbi.com/v1.0/myorg/groups/$workspaceId/reports/$reportId/GenerateToken";
+
+        $response = Http::withToken($token)->post($url, [
+            'accessLevel' => 'View',
+        ]);
+
+        if ($response->failed()) {
+            Log::error('Failed to generate Power BI embed token', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            throw new \Exception('Failed to generate embed token: '.$response->status());
+        }
+
+        return $response->json('token');
+    }
+
+    /**
      * Build the URL for executeQueries endpoint.
      */
     private function buildExecuteQueriesUrl(): string
@@ -243,5 +313,14 @@ class PowerBiService
         $datasetId = config('powerbi.dataset_id');
 
         return 'https://api.powerbi.com/v1.0/myorg/groups/'.$workspaceId.'/datasets/'.$datasetId.'/executeQueries';
+    }
+
+    /**
+     * Return configured cache TTL in seconds.
+     * Set POWERBI_CACHE_TTL=0 in .env to disable caching.
+     */
+    private function cacheTtl(): int
+    {
+        return (int) config('powerbi.cache_ttl', 30 * 60);
     }
 }
