@@ -57,14 +57,6 @@ class PowerBiController extends Controller
 
                     if ($analytics !== null) {
                         try {
-                            $engagementMembers = $this->powerBiService->getMembersByStatus($selectedCampaignId, 'unique-opens');
-                            $analytics['summary']['unique_opens'] = count($engagementMembers);
-
-                            $delivered = $analytics['summary']['delivered'] ?? 0;
-                            if ($delivered > 0) {
-                                $analytics['summary']['open_rate'] = round((count($engagementMembers) / $delivered) * 100, 2);
-                            }
-
                             $registeredMembers = $this->powerBiService->getMembersByStatus($selectedCampaignId, 'registered-appointment');
                             $analytics['summary']['registered_appointment'] = count($registeredMembers);
 
@@ -77,7 +69,7 @@ class PowerBiController extends Controller
                                 $analytics['sub_category'] = $firstRow['(raw) Engagement[Sub-Category]'] ?? null;
                             }
                         } catch (\Exception $e) {
-                            Log::error('Failed to load engagement unique opens for dashboard', [
+                            Log::error('Failed to load engagement data for dashboard', [
                                 'campaign_id' => $selectedCampaignId,
                                 'error' => $e->getMessage(),
                             ]);
