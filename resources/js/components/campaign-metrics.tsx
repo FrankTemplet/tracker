@@ -1,10 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { BarChart3, Eye, MousePointerClick, AlertTriangle, Mail, TrendingUp } from 'lucide-react';
+import { BarChart3, Eye, MousePointerClick, AlertTriangle, Mail, TrendingUp, Users } from 'lucide-react';
 import { useState } from 'react';
 import type { ComponentType } from 'react';
 import { MetricEmailsModal } from '@/components/metric-emails-modal';
+import { MetricMembersModal } from '@/components/metric-members-modal';
 
 export interface CampaignMetricsData {
     delivered: number;
@@ -15,10 +16,11 @@ export interface CampaignMetricsData {
     unique_click_through_rate: number;
     click_to_open_rate: number;
     total_click_through_rate: number;
-    total_opens: number;
+    total_opens?: number;
     hard_bounces: number;
     delivery_rate: number;
     segment: string | null;
+    registered_appointment?: number;
 }
 
 export interface CampaignAnalyticsData {
@@ -27,6 +29,9 @@ export interface CampaignAnalyticsData {
     segment: string | null;
     summary: CampaignMetricsData;
     emails: EmailCampaignMetric[];
+    primary_purpose?: string | null;
+    category?: string | null;
+    sub_category?: string | null;
 }
 
 export interface EmailCampaignMetric {
@@ -54,7 +59,8 @@ export type MetricDrilldownKey =
     | 'unique-opens'
     | 'total-opens'
     | 'unique-clicks'
-    | 'hard-bounces';
+    | 'hard-bounces'
+    | 'registered-appointment';
 
 export type MemberStatus = 'Opened' | 'Clicked' | 'Bounced' | 'Sent';
 
@@ -122,26 +128,37 @@ function MetricTile({
 }
 
 interface CampaignMetricsProps {
+    campaignId?: string;
     metrics: CampaignMetricsData | null;
     emails?: EmailCampaignMetric[];
     isLoading?: boolean;
 }
 
-export function CampaignMetrics({ metrics, emails = [], isLoading = false }: CampaignMetricsProps) {
+export function CampaignMetrics({ campaignId, metrics, emails = [], isLoading = false }: CampaignMetricsProps) {
     const [activeMetric, setActiveMetric] = useState<MetricDrilldownKey | null>(null);
+    const [activeMembersMetric, setActiveMembersMetric] = useState<string | null>(null);
     const [modalTitle, setModalTitle] = useState('');
 
     const openDrilldown = (metric: MetricDrilldownKey, title: string, count: number) => {
-        if (count <= 0 || emails.length === 0) {
+        if (count <= 0) {
             return;
         }
 
-        setActiveMetric(metric);
-        setModalTitle(title);
+        if (metric === 'unique-opens' || metric === 'registered-appointment') {
+            setActiveMembersMetric(metric);
+            setModalTitle(title);
+        } else {
+            if (emails.length === 0) {
+                return;
+            }
+            setActiveMetric(metric);
+            setModalTitle(title);
+        }
     };
 
     const closeDrilldown = () => {
         setActiveMetric(null);
+        setActiveMembersMetric(null);
         setModalTitle('');
     };
     if (!metrics && !isLoading) {
@@ -178,7 +195,7 @@ export function CampaignMetrics({ metrics, emails = [], isLoading = false }: Cam
                 </div>
             </CardHeader>
             <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     <MetricTile
                         label="Delivered"
                         value={metrics?.delivered ?? 0}
@@ -201,16 +218,6 @@ export function CampaignMetrics({ metrics, emails = [], isLoading = false }: Cam
                         onClick={() => openDrilldown('unique-opens', 'Unique Opens', metrics?.unique_opens ?? 0)}
                     />
                     <MetricTile
-                        label="Total Opens"
-                        value={metrics?.total_opens ?? 0}
-                        colorClass="text-sky-600 dark:text-sky-400"
-                        iconBgClass="bg-sky-500/10"
-                        Icon={TrendingUp}
-                        isLoading={isLoading}
-                        clickable
-                        onClick={() => openDrilldown('total-opens', 'Total Opens', metrics?.total_opens ?? 0)}
-                    />
-                    <MetricTile
                         label="Unique Clicks"
                         value={metrics?.unique_clicks ?? 0}
                         subtitle={`${metrics?.click_rate ?? 0}% click rate`}
@@ -223,7 +230,7 @@ export function CampaignMetrics({ metrics, emails = [], isLoading = false }: Cam
                     />
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                     <MetricTile
                         label="Hard Bounces"
                         value={metrics?.hard_bounces ?? 0}
@@ -259,6 +266,16 @@ export function CampaignMetrics({ metrics, emails = [], isLoading = false }: Cam
                         Icon={BarChart3}
                         isLoading={isLoading}
                     />
+                    <MetricTile
+                        label="Registered / Schedule Appointment"
+                        value={metrics?.registered_appointment ?? 0}
+                        colorClass="text-teal-600 dark:text-teal-400"
+                        iconBgClass="bg-teal-500/10"
+                        Icon={Users}
+                        isLoading={isLoading}
+                        clickable
+                        onClick={() => openDrilldown('registered-appointment', 'Registered / Schedule Appointment', metrics?.registered_appointment ?? 0)}
+                    />
                 </div>
             </CardContent>
 
@@ -267,6 +284,14 @@ export function CampaignMetrics({ metrics, emails = [], isLoading = false }: Cam
                 onOpenChange={(open) => !open && closeDrilldown()}
                 emails={emails}
                 metric={activeMetric}
+                title={modalTitle}
+            />
+
+            <MetricMembersModal
+                open={activeMembersMetric !== null}
+                onOpenChange={(open) => !open && closeDrilldown()}
+                campaignId={campaignId ?? ''}
+                metric={activeMembersMetric}
                 title={modalTitle}
             />
         </Card>

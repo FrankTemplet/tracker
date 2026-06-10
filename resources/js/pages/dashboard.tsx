@@ -140,10 +140,14 @@ export default function Dashboard({
                                     details={{
                                         campaign_name: analytics.campaign_name,
                                         segment: analytics.segment,
+                                        primary_purpose: analytics.primary_purpose,
+                                        category: analytics.category,
+                                        sub_category: analytics.sub_category,
                                     }}
                                 />
                             )}
                             <CampaignMetrics
+                                campaignId={selectedCampaignId}
                                 metrics={analytics?.summary ?? null}
                                 emails={analytics?.emails ?? []}
                                 isLoading={isLoading}

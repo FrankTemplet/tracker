@@ -196,6 +196,7 @@ class PowerBiService
             'unique-opens', 'total-opens' => 'EVALUATE FILTER('.$table.', AND('.$campaignFilter.', '.$table.'[Member Status] IN {"Opened", "Clicked"}))',
             'unique-clicks' => 'EVALUATE FILTER('.$table.', AND('.$campaignFilter.', '.$table.'[Member Status] = "Clicked"))',
             'hard-bounces' => 'EVALUATE FILTER('.$table.', AND('.$campaignFilter.', '.$table.'[Member Status] = "Bounced"))',
+            'registered-appointment' => 'EVALUATE FILTER('.$table.', AND('.$campaignFilter.', '.$table.'[Member Status] IN {"Registered", "Schedule Appointment"}))',
             'Opened', 'Clicked', 'Bounced', 'Sent' => 'EVALUATE FILTER('.$table.', AND('.$campaignFilter.', '.$table.'[Member Status] = "'.$metric.'"))',
             default => throw new \InvalidArgumentException("Unknown member metric: {$metric}"),
         };

@@ -110,6 +110,42 @@ test('dashboard loads analytics when campaign is selected', function () {
                 'segment' => 'Small - Medium',
             ],
             'emails' => [],
+        ])
+        ->shouldReceive('getMembersByStatus')
+        ->once()
+        ->with($campaignId, 'unique-opens')
+        ->andReturn([
+            [
+                'member_id' => '00vPl00000UmUCI',
+                'first_name' => 'Shanequa',
+                'last_name' => 'Hall',
+                'email' => 'elloquentshanae@gmail.com',
+                'company' => 'Drink Pure',
+                'status_update_date' => '5/19/2025',
+            ],
+        ])
+        ->shouldReceive('getMembersByStatus')
+        ->once()
+        ->with($campaignId, 'registered-appointment')
+        ->andReturn([
+            [
+                'member_id' => '00vPl00000UmUFL',
+                'first_name' => 'David',
+                'last_name' => 'Johnson',
+                'email' => 'david.j@example.com',
+                'company' => 'Cloud Services',
+                'status_update_date' => '5/19/2025',
+            ],
+        ])
+        ->shouldReceive('getEngagementsByCampaign')
+        ->once()
+        ->with($campaignId)
+        ->andReturn([
+            [
+                '(raw) Engagement[Primary Campaign Purpose]' => 'Test Purpose',
+                '(raw) Engagement[Category]' => 'Test Category',
+                '(raw) Engagement[Sub-Category]' => 'Test Sub-Category',
+            ],
         ]);
 
     $user = User::factory()->create();

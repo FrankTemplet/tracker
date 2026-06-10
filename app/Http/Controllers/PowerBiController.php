@@ -54,6 +54,35 @@ class PowerBiController extends Controller
             if ($selectedCampaignId) {
                 try {
                     $analytics = $this->powerBiService->getCampaignMetrics($selectedCampaignId);
+
+                    if ($analytics !== null) {
+                        try {
+                            $engagementMembers = $this->powerBiService->getMembersByStatus($selectedCampaignId, 'unique-opens');
+                            $analytics['summary']['unique_opens'] = count($engagementMembers);
+
+                            $delivered = $analytics['summary']['delivered'] ?? 0;
+                            if ($delivered > 0) {
+                                $analytics['summary']['open_rate'] = round((count($engagementMembers) / $delivered) * 100, 2);
+                            }
+
+                            $registeredMembers = $this->powerBiService->getMembersByStatus($selectedCampaignId, 'registered-appointment');
+                            $analytics['summary']['registered_appointment'] = count($registeredMembers);
+
+                            // Fetch campaign details from engagement table
+                            $engagements = $this->powerBiService->getEngagementsByCampaign($selectedCampaignId);
+                            if (! empty($engagements)) {
+                                $firstRow = $engagements[0];
+                                $analytics['primary_purpose'] = $firstRow['(raw) Engagement[Primary Campaign Purpose]'] ?? null;
+                                $analytics['category'] = $firstRow['(raw) Engagement[Category]'] ?? null;
+                                $analytics['sub_category'] = $firstRow['(raw) Engagement[Sub-Category]'] ?? null;
+                            }
+                        } catch (\Exception $e) {
+                            Log::error('Failed to load engagement unique opens for dashboard', [
+                                'campaign_id' => $selectedCampaignId,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
                 } catch (\Exception $e) {
                     Log::error('Failed to load campaign metrics for dashboard', [
                         'campaign_id' => $selectedCampaignId,

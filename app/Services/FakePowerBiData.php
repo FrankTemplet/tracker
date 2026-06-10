@@ -84,6 +84,7 @@ class FakePowerBiData
                 'unique-opens', 'total-opens' => in_array($status, ['Opened', 'Clicked'], true),
                 'unique-clicks' => $status === 'Clicked',
                 'hard-bounces' => $status === 'Bounced',
+                'registered-appointment' => in_array($status, ['Registered', 'Schedule Appointment'], true),
                 default => $status === $metric,
             };
         });
@@ -109,18 +110,18 @@ class FakePowerBiData
             ['id' => '00vPl00000UmUCI', 'first' => 'Shanequa', 'last' => 'Hall', 'email' => 'elloquentshanae@gmail.com', 'company' => 'Drink Pure', 'status' => 'Opened'],
             ['id' => '00vPl00000UmUDJ', 'first' => 'John', 'last' => 'Smith', 'email' => 'john.smith@example.com', 'company' => 'Tech Corp', 'status' => 'Clicked'],
             ['id' => '00vPl00000UmUEK', 'first' => 'Maria', 'last' => 'Garcia', 'email' => 'maria.garcia@example.com', 'company' => 'Digital Solutions', 'status' => 'Opened'],
-            ['id' => '00vPl00000UmUFL', 'first' => 'David', 'last' => 'Johnson', 'email' => 'david.j@example.com', 'company' => 'Cloud Services', 'status' => 'Sent'],
+            ['id' => '00vPl00000UmUFL', 'first' => 'David', 'last' => 'Johnson', 'email' => 'david.j@example.com', 'company' => 'Cloud Services', 'status' => 'Registered'],
             ['id' => '00vPl00000UmUGM', 'first' => 'Sarah', 'last' => 'Williams', 'email' => 'sarah.w@example.com', 'company' => 'Marketing Inc', 'status' => 'Clicked'],
             ['id' => '00vPl00000UmUHN', 'first' => 'Michael', 'last' => 'Brown', 'email' => 'mbrown@example.com', 'company' => 'Enterprise Ltd', 'status' => 'Opened'],
             ['id' => '00vPl00000UmUIO', 'first' => 'Jessica', 'last' => 'Davis', 'email' => 'jessica.davis@example.com', 'company' => 'Global Trade', 'status' => 'Bounced'],
             ['id' => '00vPl00000UmUJP', 'first' => 'Robert', 'last' => 'Miller', 'email' => 'robert.miller@example.com', 'company' => 'Finance Plus', 'status' => 'Opened'],
             ['id' => '00vPl00000UmUKQ', 'first' => 'Emily', 'last' => 'Wilson', 'email' => 'ewilson@example.com', 'company' => 'Retail Group', 'status' => 'Clicked'],
-            ['id' => '00vPl00000UmULR', 'first' => 'James', 'last' => 'Moore', 'email' => 'james.moore@example.com', 'company' => 'Healthcare Systems', 'status' => 'Sent'],
+            ['id' => '00vPl00000UmULR', 'first' => 'James', 'last' => 'Moore', 'email' => 'james.moore@example.com', 'company' => 'Healthcare Systems', 'status' => 'Schedule Appointment'],
             ['id' => '00vPl00000UmUMS', 'first' => 'Linda', 'last' => 'Taylor', 'email' => 'linda.taylor@example.com', 'company' => 'Education Services', 'status' => 'Opened'],
             ['id' => '00vPl00000UmUNT', 'first' => 'William', 'last' => 'Anderson', 'email' => 'wanderson@example.com', 'company' => 'Manufacturing Co', 'status' => 'Bounced'],
             ['id' => '00vPl00000UmUOU', 'first' => 'Patricia', 'last' => 'Thomas', 'email' => 'pthomas@example.com', 'company' => 'Legal Advisors', 'status' => 'Opened'],
             ['id' => '00vPl00000UmUPV', 'first' => 'Richard', 'last' => 'Jackson', 'email' => 'rjackson@example.com', 'company' => 'Consulting Firm', 'status' => 'Clicked'],
-            ['id' => '00vPl00000UmUQW', 'first' => 'Barbara', 'last' => 'White', 'email' => 'bwhite@example.com', 'company' => 'Design Studio', 'status' => 'Sent'],
+            ['id' => '00vPl00000UmUQW', 'first' => 'Barbara', 'last' => 'White', 'email' => 'bwhite@example.com', 'company' => 'Design Studio', 'status' => 'Registered'],
         ];
 
         $engagements = [];
