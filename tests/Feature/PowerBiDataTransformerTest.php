@@ -172,6 +172,61 @@ test('transformMemberDetails handles already transformed data', function () {
         ->and($transformed[0]['first_name'])->toBe('John');
 });
 
+test('buildCampaignAnalyticsFromEmailRows aggregates email metrics correctly', function () {
+    $rows = [
+        [
+            '(raw) Email Campaign Metrics[RowID]' => 1,
+            '(raw) Email Campaign Metrics[Name]' => 'Email 1',
+            '(raw) Email Campaign Metrics[Subject]' => 'Subject 1',
+            '(raw) Email Campaign Metrics[Scheduled Date]' => '5/5/2025 10:00:00 AM',
+            '(raw) Email Campaign Metrics[Campaign ID]' => 'camp1',
+            '(raw) Email Campaign Metrics[Campaign Name]' => 'Campaign 1',
+            '(raw) Email Campaign Metrics[Total Delivered]' => 100,
+            '(raw) Email Campaign Metrics[Unique Opens]' => 50,
+            '(raw) Email Campaign Metrics[Open Rate]' => 50,
+            '(raw) Email Campaign Metrics[Unique Clicks]' => 10,
+            '(raw) Email Campaign Metrics[Unique Click Through Rate]' => 10,
+            '(raw) Email Campaign Metrics[Click To Open Ratio]' => 20,
+            '(raw) Email Campaign Metrics[Total Click Through Rate]' => 8,
+            '(raw) Email Campaign Metrics[Total Opens]' => 70,
+            '(raw) Email Campaign Metrics[Total Hard Bounces]' => 2,
+            '(raw) Email Campaign Metrics[Delivery Rate]' => 98,
+            '(raw) Email Campaign Metrics[Segment]' => 'Enterprise',
+        ],
+        [
+            '(raw) Email Campaign Metrics[RowID]' => 2,
+            '(raw) Email Campaign Metrics[Name]' => 'Email 2',
+            '(raw) Email Campaign Metrics[Subject]' => 'Subject 2',
+            '(raw) Email Campaign Metrics[Scheduled Date]' => '5/12/2025 10:00:00 AM',
+            '(raw) Email Campaign Metrics[Campaign ID]' => 'camp1',
+            '(raw) Email Campaign Metrics[Campaign Name]' => 'Campaign 1',
+            '(raw) Email Campaign Metrics[Total Delivered]' => 50,
+            '(raw) Email Campaign Metrics[Unique Opens]' => 25,
+            '(raw) Email Campaign Metrics[Open Rate]' => 50,
+            '(raw) Email Campaign Metrics[Unique Clicks]' => 5,
+            '(raw) Email Campaign Metrics[Unique Click Through Rate]' => 10,
+            '(raw) Email Campaign Metrics[Click To Open Ratio]' => 20,
+            '(raw) Email Campaign Metrics[Total Click Through Rate]' => 6,
+            '(raw) Email Campaign Metrics[Total Opens]' => 35,
+            '(raw) Email Campaign Metrics[Total Hard Bounces]' => 1,
+            '(raw) Email Campaign Metrics[Delivery Rate]' => 98.04,
+            '(raw) Email Campaign Metrics[Segment]' => 'Enterprise',
+        ],
+    ];
+
+    $analytics = PowerBiDataTransformer::buildCampaignAnalyticsFromEmailRows($rows);
+
+    expect($analytics)->not->toBeNull()
+        ->and($analytics['campaign_id'])->toBe('camp1')
+        ->and($analytics['summary']['delivered'])->toBe(150)
+        ->and($analytics['summary']['unique_opens'])->toBe(75)
+        ->and($analytics['summary']['unique_clicks'])->toBe(15)
+        ->and($analytics['summary']['total_opens'])->toBe(105)
+        ->and($analytics['summary']['hard_bounces'])->toBe(3)
+        ->and($analytics['summary']['open_rate'])->toBe(50.0)
+        ->and($analytics['emails'])->toHaveCount(2);
+});
+
 test('stableEngagementId generates consistent hash', function () {
     $engagement1 = [
         '(raw) Engagement[Campaign ID]' => '701Pl00000hB2yb',

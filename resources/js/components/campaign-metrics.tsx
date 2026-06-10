@@ -1,64 +1,116 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { BarChart3, Mail, Eye, MousePointerClick, AlertTriangle, Users } from 'lucide-react';
+import { BarChart3, Eye, MousePointerClick, AlertTriangle, Mail, TrendingUp } from 'lucide-react';
+import { useState } from 'react';
 import type { ComponentType } from 'react';
+import { MetricEmailsModal } from '@/components/metric-emails-modal';
 
 export interface CampaignMetricsData {
-    sent: number;
     delivered: number;
-    opened: number;
-    clicked: number;
-    bounced: number;
+    unique_opens: number;
     open_rate: number;
+    unique_clicks: number;
     click_rate: number;
-    bounce_rate: number;
-    // Campaign details
-    primary_purpose: string | null;
-    category: string | null;
-    sub_category: string | null;
+    unique_click_through_rate: number;
+    click_to_open_rate: number;
+    total_click_through_rate: number;
+    total_opens: number;
+    hard_bounces: number;
+    delivery_rate: number;
     segment: string | null;
-    opportunities_in_campaign: number | null;
 }
+
+export interface CampaignAnalyticsData {
+    campaign_id: string;
+    campaign_name: string;
+    segment: string | null;
+    summary: CampaignMetricsData;
+    emails: EmailCampaignMetric[];
+}
+
+export interface EmailCampaignMetric {
+    id: string;
+    name: string;
+    subject: string;
+    scheduled_date: string;
+    campaign_id: string;
+    campaign_name: string;
+    delivered: number;
+    unique_opens: number;
+    open_rate: number;
+    unique_clicks: number;
+    unique_click_through_rate: number;
+    click_to_open_ratio: number;
+    total_click_through_rate: number;
+    total_opens: number;
+    hard_bounces: number;
+    delivery_rate: number;
+    segment: string | null;
+}
+
+export type MetricDrilldownKey =
+    | 'delivered'
+    | 'unique-opens'
+    | 'total-opens'
+    | 'unique-clicks'
+    | 'hard-bounces';
 
 export type MemberStatus = 'Opened' | 'Clicked' | 'Bounced' | 'Sent';
 
-interface MetricButtonProps {
+interface MetricTileProps {
     label: string;
-    value: number;
-    rate: number | null;
-    status: MemberStatus;
+    value: string | number;
+    subtitle?: string | null;
     colorClass: string;
     iconBgClass: string;
     Icon: ComponentType<{ className?: string }>;
     isLoading: boolean;
-    onClick?: (status: MemberStatus) => void;
+    clickable?: boolean;
+    onClick?: () => void;
 }
 
-function MetricButton({ label, value, rate, status, colorClass, iconBgClass, Icon, isLoading, onClick }: MetricButtonProps) {
-    const isClickable = !!onClick;
+function MetricTile({
+    label,
+    value,
+    subtitle,
+    colorClass,
+    iconBgClass,
+    Icon,
+    isLoading,
+    clickable = false,
+    onClick,
+}: MetricTileProps) {
+    const isInteractive = clickable && !!onClick && !isLoading;
+
     return (
         <button
             type="button"
-            onClick={isClickable ? () => onClick(status) : undefined}
-            disabled={!isClickable || isLoading}
+            onClick={isInteractive ? onClick : undefined}
+            disabled={!isInteractive}
             className={`w-full text-left rounded-xl border bg-card p-4 shadow-sm transition-all ${
-                isClickable ? 'cursor-pointer hover:border-primary/50 hover:shadow-md active:scale-[0.98]' : 'cursor-default'
+                isInteractive
+                    ? 'cursor-pointer hover:border-primary/50 hover:shadow-md active:scale-[0.98]'
+                    : 'cursor-default'
             }`}
         >
             <div className="flex items-center justify-between gap-2">
                 <div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
                         {label}
-                        {isClickable && <span className="ml-1 text-[10px] normal-case font-normal opacity-60">↗ click</span>}
+                        {isInteractive && (
+                            <span className="ml-1 text-[10px] normal-case font-normal opacity-60">↗ view</span>
+                        )}
                     </p>
                     {isLoading ? (
                         <Skeleton className="h-7 w-16" />
                     ) : (
-                        <p className={`text-2xl font-bold ${colorClass}`}>{value.toLocaleString()}</p>
+                        <p className={`text-2xl font-bold ${colorClass}`}>
+                            {typeof value === 'number' ? value.toLocaleString() : value}
+                        </p>
                     )}
-                    {rate !== null && !isLoading && (
-                        <p className="text-xs text-muted-foreground mt-1">{rate}% rate</p>
+                    {subtitle && !isLoading && (
+                        <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
                     )}
                 </div>
                 <div className={`rounded-lg ${iconBgClass} p-2.5`}>
@@ -71,11 +123,27 @@ function MetricButton({ label, value, rate, status, colorClass, iconBgClass, Ico
 
 interface CampaignMetricsProps {
     metrics: CampaignMetricsData | null;
+    emails?: EmailCampaignMetric[];
     isLoading?: boolean;
-    onMetricClick?: (status: MemberStatus) => void;
 }
 
-export function CampaignMetrics({ metrics, isLoading = false, onMetricClick }: CampaignMetricsProps) {
+export function CampaignMetrics({ metrics, emails = [], isLoading = false }: CampaignMetricsProps) {
+    const [activeMetric, setActiveMetric] = useState<MetricDrilldownKey | null>(null);
+    const [modalTitle, setModalTitle] = useState('');
+
+    const openDrilldown = (metric: MetricDrilldownKey, title: string, count: number) => {
+        if (count <= 0 || emails.length === 0) {
+            return;
+        }
+
+        setActiveMetric(metric);
+        setModalTitle(title);
+    };
+
+    const closeDrilldown = () => {
+        setActiveMetric(null);
+        setModalTitle('');
+    };
     if (!metrics && !isLoading) {
         return (
             <Card className="border-dashed">
@@ -100,7 +168,7 @@ export function CampaignMetrics({ metrics, isLoading = false, onMetricClick }: C
                         <div className="rounded-lg bg-violet-500/10 p-1.5">
                             <BarChart3 className="h-4 w-4 text-violet-600 dark:text-violet-400" />
                         </div>
-                        <CardTitle className="text-base font-semibold">Campaign Metrics</CardTitle>
+                        <CardTitle className="text-base font-semibold">Campaign Summary</CardTitle>
                     </div>
                     {metrics && (
                         <Badge variant="secondary" className="text-xs font-normal">
@@ -110,95 +178,97 @@ export function CampaignMetrics({ metrics, isLoading = false, onMetricClick }: C
                 </div>
             </CardHeader>
             <CardContent className="space-y-4">
-                {/* Non-clickable totals */}
-                <div className="grid grid-cols-2 gap-3">
-                    <MetricButton
-                        label="Sent"
-                        value={metrics?.sent ?? 0}
-                        rate={null}
-                        status="Sent"
-                        colorClass="text-foreground"
-                        iconBgClass="bg-muted/50"
-                        Icon={Mail}
-                        isLoading={isLoading}
-                    />
-                    <MetricButton
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <MetricTile
                         label="Delivered"
                         value={metrics?.delivered ?? 0}
-                        rate={null}
-                        status="Sent"
                         colorClass="text-emerald-600 dark:text-emerald-400"
                         iconBgClass="bg-emerald-500/10"
-                        Icon={Users}
+                        Icon={Mail}
                         isLoading={isLoading}
+                        clickable
+                        onClick={() => openDrilldown('delivered', 'Delivered', metrics?.delivered ?? 0)}
                     />
-                </div>
-
-                {/* Clickable engagement metrics */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <MetricButton
-                        label="Opens"
-                        value={metrics?.opened ?? 0}
-                        rate={metrics?.open_rate ?? null}
-                        status="Opened"
+                    <MetricTile
+                        label="Unique Opens"
+                        value={metrics?.unique_opens ?? 0}
+                        subtitle={`${metrics?.open_rate ?? 0}% open rate`}
                         colorClass="text-sky-600 dark:text-sky-400"
                         iconBgClass="bg-sky-500/10"
                         Icon={Eye}
                         isLoading={isLoading}
-                        onClick={onMetricClick}
+                        clickable
+                        onClick={() => openDrilldown('unique-opens', 'Unique Opens', metrics?.unique_opens ?? 0)}
                     />
-                    <MetricButton
-                        label="Clicks"
-                        value={metrics?.clicked ?? 0}
-                        rate={metrics?.click_rate ?? null}
-                        status="Clicked"
+                    <MetricTile
+                        label="Total Opens"
+                        value={metrics?.total_opens ?? 0}
+                        colorClass="text-sky-600 dark:text-sky-400"
+                        iconBgClass="bg-sky-500/10"
+                        Icon={TrendingUp}
+                        isLoading={isLoading}
+                        clickable
+                        onClick={() => openDrilldown('total-opens', 'Total Opens', metrics?.total_opens ?? 0)}
+                    />
+                    <MetricTile
+                        label="Unique Clicks"
+                        value={metrics?.unique_clicks ?? 0}
+                        subtitle={`${metrics?.click_rate ?? 0}% click rate`}
                         colorClass="text-indigo-600 dark:text-indigo-400"
                         iconBgClass="bg-indigo-500/10"
                         Icon={MousePointerClick}
                         isLoading={isLoading}
-                        onClick={onMetricClick}
+                        clickable
+                        onClick={() => openDrilldown('unique-clicks', 'Unique Clicks', metrics?.unique_clicks ?? 0)}
                     />
-                    <MetricButton
-                        label="Bounced"
-                        value={metrics?.bounced ?? 0}
-                        rate={metrics?.bounce_rate ?? null}
-                        status="Bounced"
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <MetricTile
+                        label="Hard Bounces"
+                        value={metrics?.hard_bounces ?? 0}
+                        subtitle={`${metrics?.delivery_rate ?? 0}% delivery rate`}
                         colorClass="text-amber-600 dark:text-amber-400"
                         iconBgClass="bg-amber-500/10"
                         Icon={AlertTriangle}
                         isLoading={isLoading}
-                        onClick={onMetricClick}
+                        clickable
+                        onClick={() => openDrilldown('hard-bounces', 'Hard Bounces', metrics?.hard_bounces ?? 0)}
+                    />
+                    <MetricTile
+                        label="Unique CTR"
+                        value={`${metrics?.unique_click_through_rate ?? 0}%`}
+                        colorClass="text-indigo-600 dark:text-indigo-400"
+                        iconBgClass="bg-indigo-500/10"
+                        Icon={MousePointerClick}
+                        isLoading={isLoading}
+                    />
+                    <MetricTile
+                        label="Click-to-Open"
+                        value={`${metrics?.click_to_open_rate ?? 0}%`}
+                        colorClass="text-violet-600 dark:text-violet-400"
+                        iconBgClass="bg-violet-500/10"
+                        Icon={BarChart3}
+                        isLoading={isLoading}
+                    />
+                    <MetricTile
+                        label="Total CTR"
+                        value={`${metrics?.total_click_through_rate ?? 0}%`}
+                        colorClass="text-violet-600 dark:text-violet-400"
+                        iconBgClass="bg-violet-500/10"
+                        Icon={BarChart3}
+                        isLoading={isLoading}
                     />
                 </div>
-
-                {/* Rate summary */}
-                <div className="grid grid-cols-3 gap-3 pt-2 border-t">
-                    <div className="text-center">
-                        <p className="text-xs text-muted-foreground">Open Rate</p>
-                        {isLoading ? (
-                            <Skeleton className="h-5 w-12 mx-auto mt-1" />
-                        ) : (
-                            <p className="text-sm font-semibold text-sky-600 dark:text-sky-400">{metrics?.open_rate ?? 0}%</p>
-                        )}
-                    </div>
-                    <div className="text-center">
-                        <p className="text-xs text-muted-foreground">Click Rate</p>
-                        {isLoading ? (
-                            <Skeleton className="h-5 w-12 mx-auto mt-1" />
-                        ) : (
-                            <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">{metrics?.click_rate ?? 0}%</p>
-                        )}
-                    </div>
-                    <div className="text-center">
-                        <p className="text-xs text-muted-foreground">Bounce Rate</p>
-                        {isLoading ? (
-                            <Skeleton className="h-5 w-12 mx-auto mt-1" />
-                        ) : (
-                            <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">{metrics?.bounce_rate ?? 0}%</p>
-                        )}
-                    </div>
-                </div>
             </CardContent>
+
+            <MetricEmailsModal
+                open={activeMetric !== null}
+                onOpenChange={(open) => !open && closeDrilldown()}
+                emails={emails}
+                metric={activeMetric}
+                title={modalTitle}
+            />
         </Card>
     );
 }

@@ -50,20 +50,16 @@ class PowerBiController extends Controller
             }
 
             $analytics = null;
-            $engagement = null;
 
-            // If a campaign is selected, calculate its metrics from engagements
             if ($selectedCampaignId) {
-                $rawEngagements = $this->powerBiService->getEngagementsByCampaign($selectedCampaignId);
-                $analytics = PowerBiDataTransformer::aggregateCampaignMetrics($rawEngagements);
-
-                // Transform engagement metrics into expected format
-                $engagement = [
-                    'opened' => $analytics['opened'],
-                    'clicked' => $analytics['clicked'],
-                    'bounced' => $analytics['bounced'],
-                    'sent' => $analytics['sent'],
-                ];
+                try {
+                    $analytics = $this->powerBiService->getCampaignMetrics($selectedCampaignId);
+                } catch (\Exception $e) {
+                    Log::error('Failed to load campaign metrics for dashboard', [
+                        'campaign_id' => $selectedCampaignId,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
 
             return Inertia::render('dashboard', [
@@ -72,7 +68,6 @@ class PowerBiController extends Controller
                 'selectedRegion' => $selectedRegion,
                 'selectedYear' => $selectedYear,
                 'analytics' => $analytics,
-                'engagement' => $engagement,
                 'lastUpdated' => now()->toIso8601String(),
             ]);
         } catch (\Exception $e) {
@@ -84,7 +79,7 @@ class PowerBiController extends Controller
 
             return Inertia::render('dashboard', [
                 'campaigns' => [],
-                'selectedCampaignId' => $selectedCampaignId,
+                'selectedCampaignId' => null,
                 'selectedRegion' => $selectedRegion,
                 'selectedYear' => $selectedYear,
                 'error' => 'Failed to load dashboard data. Please try again later.',
@@ -124,8 +119,14 @@ class PowerBiController extends Controller
     public function campaignMetrics(string $campaignId): JsonResponse
     {
         try {
-            $rawEngagements = $this->powerBiService->getEngagementsByCampaign($campaignId);
-            $metrics = PowerBiDataTransformer::aggregateCampaignMetrics($rawEngagements);
+            $metrics = $this->powerBiService->getCampaignMetrics($campaignId);
+
+            if ($metrics === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Campaign metrics not found.',
+                ], 404);
+            }
 
             return response()->json([
                 'success' => true,
@@ -147,20 +148,24 @@ class PowerBiController extends Controller
     /**
      * Get members with a specific status for a campaign (drill-down).
      */
-    public function campaignMembers(string $campaignId, string $status): JsonResponse
+    public function campaignMembers(string $campaignId, string $metric): JsonResponse
     {
         try {
-            $members = $this->powerBiService->getMembersByStatus($campaignId, $status);
-            $transformedMembers = PowerBiDataTransformer::transformMemberDetails($members);
+            $members = $this->powerBiService->getMembersByStatus($campaignId, $metric);
 
             return response()->json([
                 'success' => true,
-                'data' => $transformedMembers,
+                'data' => $members,
             ]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 400);
         } catch (\Exception $e) {
             Log::error('Failed to fetch campaign members', [
                 'campaign_id' => $campaignId,
-                'status' => $status,
+                'metric' => $metric,
                 'error' => $e->getMessage(),
             ]);
 

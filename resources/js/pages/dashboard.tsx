@@ -3,8 +3,8 @@ import { useState } from 'react';
 import { CampaignSelector, type Campaign } from '@/components/campaign-selector';
 import { CampaignFilters, type Region } from '@/components/campaign-filters';
 import { CampaignDetails } from '@/components/campaign-details';
-import { CampaignMetrics, type CampaignMetricsData, type MemberStatus } from '@/components/campaign-metrics';
-import { MemberListPanel, type Member } from '@/components/member-list-panel';
+import { CampaignMetrics, type CampaignAnalyticsData } from '@/components/campaign-metrics';
+import { EmailCampaignList } from '@/components/email-campaign-list';
 import { RefreshIndicator } from '@/components/refresh-indicator';
 import { DashboardSkeleton } from '@/components/dashboard-skeleton';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,7 @@ interface DashboardProps {
     selectedCampaignId?: string;
     selectedRegion?: Region;
     selectedYear?: string;
-    analytics?: CampaignMetricsData;
+    analytics?: CampaignAnalyticsData;
     lastUpdated?: string;
     error?: string;
 }
@@ -28,25 +28,21 @@ export default function Dashboard({
     selectedYear,
     analytics,
     lastUpdated,
+    error,
 }: DashboardProps) {
     const [isLoading, setIsLoading] = useState(false);
-    const [members, setMembers] = useState<Member[]>([]);
-    const [selectedMemberStatus, setSelectedMemberStatus] = useState<MemberStatus | null>(null);
-    const [isLoadingMembers, setIsLoadingMembers] = useState(false);
 
     const lastUpdatedDate = lastUpdated ? new Date(lastUpdated) : new Date();
 
     const handleRegionChange = (region: Region) => {
         setIsLoading(true);
-        setMembers([]);
-        setSelectedMemberStatus(null);
         router.get(
             dashboard(),
             { region, year: selectedYear },
             {
                 preserveState: true,
                 preserveScroll: true,
-                only: ['campaigns', 'selectedRegion', 'selectedYear', 'lastUpdated'],
+                only: ['campaigns', 'selectedRegion', 'selectedYear', 'selectedCampaignId', 'analytics', 'lastUpdated', 'error'],
                 onFinish: () => setIsLoading(false),
             },
         );
@@ -54,15 +50,13 @@ export default function Dashboard({
 
     const handleYearChange = (year: string) => {
         setIsLoading(true);
-        setMembers([]);
-        setSelectedMemberStatus(null);
         router.get(
             dashboard(),
             { region: selectedRegion, year },
             {
                 preserveState: true,
                 preserveScroll: true,
-                only: ['campaigns', 'selectedRegion', 'selectedYear', 'lastUpdated'],
+                only: ['campaigns', 'selectedRegion', 'selectedYear', 'selectedCampaignId', 'analytics', 'lastUpdated', 'error'],
                 onFinish: () => setIsLoading(false),
             },
         );
@@ -70,47 +64,20 @@ export default function Dashboard({
 
     const handleCampaignChange = (campaignId: string) => {
         setIsLoading(true);
-        setMembers([]);
-        setSelectedMemberStatus(null);
         router.get(
             dashboard(),
             { region: selectedRegion, year: selectedYear, campaign_id: campaignId },
             {
                 preserveState: true,
                 preserveScroll: true,
-                only: ['analytics', 'selectedCampaignId', 'lastUpdated'],
+                only: ['analytics', 'selectedCampaignId', 'lastUpdated', 'error'],
                 onFinish: () => setIsLoading(false),
             },
         );
     };
 
-    const handleMetricClick = async (status: MemberStatus) => {
-        if (!selectedCampaignId) return;
-        setSelectedMemberStatus(status);
-        setIsLoadingMembers(true);
-        setMembers([]);
-        try {
-            const response = await fetch(`/api/powerbi/campaigns/${selectedCampaignId}/members/${status}`);
-            const data = await response.json();
-            if (data.success) {
-                setMembers(data.data);
-            }
-        } catch {
-            // member fetch failed silently — panel stays open showing 0 results
-        } finally {
-            setIsLoadingMembers(false);
-        }
-    };
-
-    const handleCloseMembers = () => {
-        setMembers([]);
-        setSelectedMemberStatus(null);
-    };
-
     const handleClear = () => {
         setIsLoading(true);
-        setMembers([]);
-        setSelectedMemberStatus(null);
         router.get(dashboard(), {}, { onFinish: () => setIsLoading(false) });
     };
 
@@ -120,7 +87,6 @@ export default function Dashboard({
         <>
             <Head title="Dashboard - Email Campaign Monitor" />
             <div className="flex h-full flex-col gap-4 p-4 md:p-6">
-                {/* Header */}
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-xl font-bold tracking-tight">Email Send Report</h1>
@@ -131,7 +97,6 @@ export default function Dashboard({
                     <RefreshIndicator lastUpdated={lastUpdatedDate} isRefreshing={isLoading} />
                 </div>
 
-                {/* Filter Row — Region + Year + Campaign + Clear all in one line */}
                 <div className="flex flex-wrap items-stretch gap-3">
                     <CampaignFilters
                         selectedRegion={selectedRegion}
@@ -159,7 +124,12 @@ export default function Dashboard({
                     )}
                 </div>
 
-                {/* Metrics — only when a campaign is selected */}
+                {error && (
+                    <div className="rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                        {error}
+                    </div>
+                )}
+
                 {selectedCampaignId && (
                     isLoading && !analytics ? (
                         <DashboardSkeleton />
@@ -168,29 +138,25 @@ export default function Dashboard({
                             {analytics && (
                                 <CampaignDetails
                                     details={{
-                                        primary_purpose: analytics.primary_purpose,
-                                        category: analytics.category,
-                                        sub_category: analytics.sub_category,
+                                        campaign_name: analytics.campaign_name,
                                         segment: analytics.segment,
-                                        opportunities_in_campaign: analytics.opportunities_in_campaign,
                                     }}
                                 />
                             )}
                             <CampaignMetrics
-                                metrics={analytics ?? null}
+                                metrics={analytics?.summary ?? null}
+                                emails={analytics?.emails ?? []}
                                 isLoading={isLoading}
-                                onMetricClick={handleMetricClick}
                             />
-                            {selectedMemberStatus && (
-                                <MemberListPanel
-                                    members={members}
-                                    status={selectedMemberStatus}
-                                    isLoading={isLoadingMembers}
-                                    onClose={handleCloseMembers}
-                                />
+                            {analytics && analytics.emails.length > 0 && (
+                                <EmailCampaignList emails={analytics.emails} />
                             )}
                         </div>
                     )
+                )}
+
+                {filtersSelected && !selectedCampaignId && !isLoading && (
+                    <CampaignMetrics metrics={null} isLoading={false} />
                 )}
             </div>
         </>
@@ -205,13 +171,3 @@ Dashboard.layout = {
         },
     ],
 };
-
-Dashboard.layout = {
-    breadcrumbs: [
-        {
-            title: 'Dashboard',
-            href: dashboard(),
-        },
-    ],
-};
-

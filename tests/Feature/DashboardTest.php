@@ -88,14 +88,28 @@ test('dashboard loads analytics when campaign is selected', function () {
                 'start_date' => '2025-05-01',
             ],
         ])
-        ->shouldReceive('getEngagementsByCampaign')
+        ->shouldReceive('getCampaignMetrics')
         ->once()
         ->with($campaignId)
         ->andReturn([
-            ['(raw) Engagement[Member Status]' => 'Opened'],
-            ['(raw) Engagement[Member Status]' => 'Opened'],
-            ['(raw) Engagement[Member Status]' => 'Clicked'],
-            ['(raw) Engagement[Member Status]' => 'Bounced'],
+            'campaign_id' => $campaignId,
+            'campaign_name' => 'CARIB_JAM_2025_Test',
+            'segment' => 'Small - Medium',
+            'summary' => [
+                'delivered' => 150,
+                'unique_opens' => 100,
+                'open_rate' => 66.67,
+                'unique_clicks' => 25,
+                'click_rate' => 16.67,
+                'unique_click_through_rate' => 16.67,
+                'click_to_open_rate' => 25.0,
+                'total_click_through_rate' => 14.0,
+                'total_opens' => 130,
+                'hard_bounces' => 5,
+                'delivery_rate' => 96.77,
+                'segment' => 'Small - Medium',
+            ],
+            'emails' => [],
         ]);
 
     $user = User::factory()->create();
@@ -109,7 +123,9 @@ test('dashboard loads analytics when campaign is selected', function () {
     $response->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('dashboard')
-            ->has('analytics')
             ->where('selectedCampaignId', $campaignId)
+            ->has('analytics')
+            ->where('analytics.campaign_id', $campaignId)
+            ->where('analytics.summary.delivered', 150)
         );
 });

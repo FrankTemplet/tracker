@@ -140,6 +140,20 @@ test('getEngagementsByCampaign returns filtered engagements', function () {
     });
 });
 
+test('getMembersByStatus returns hard bounces for hard-bounces metric', function () {
+    $service = new PowerBiService;
+    config([
+        'powerbi.client_id' => null,
+        'powerbi.client_secret' => null,
+        'powerbi.tenant_id' => null,
+    ]);
+
+    $members = $service->getMembersByStatus('701Pl00000hB2yb', 'hard-bounces');
+
+    expect($members)->not->toBeEmpty()
+        ->and(collect($members)->every(fn ($member) => str_contains($member['email'], '@')))->toBeTrue();
+});
+
 test('getMembersByStatus returns filtered members', function () {
     Http::fake([
         'login.microsoftonline.com/*' => Http::response(['access_token' => 'fake-token']),
@@ -235,4 +249,78 @@ test('hasCredentials returns false when credentials are missing', function () {
     $service = new PowerBiService;
 
     expect($service->hasCredentials())->toBeFalse();
+});
+
+test('getCampaignMetrics returns analytics from Email Campaign Metrics table', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'fake-token']),
+        'api.powerbi.com/*' => Http::response([
+            'results' => [
+                [
+                    'tables' => [
+                        [
+                            'rows' => [
+                                [
+                                    '(raw) Email Campaign Metrics[RowID]' => 1,
+                                    '(raw) Email Campaign Metrics[Name]' => 'Test Email 1',
+                                    '(raw) Email Campaign Metrics[Subject]' => 'Test Subject',
+                                    '(raw) Email Campaign Metrics[Scheduled Date]' => '5/5/2025 10:00:00 AM',
+                                    '(raw) Email Campaign Metrics[Campaign ID]' => '701Pl00000hB2yb',
+                                    '(raw) Email Campaign Metrics[Campaign Name]' => 'Test Campaign',
+                                    '(raw) Email Campaign Metrics[Total Delivered]' => 767,
+                                    '(raw) Email Campaign Metrics[Unique Opens]' => 200,
+                                    '(raw) Email Campaign Metrics[Open Rate]' => 26.08,
+                                    '(raw) Email Campaign Metrics[Unique Clicks]' => 43,
+                                    '(raw) Email Campaign Metrics[Unique Click Through Rate]' => 5.61,
+                                    '(raw) Email Campaign Metrics[Click To Open Ratio]' => 21.5,
+                                    '(raw) Email Campaign Metrics[Total Click Through Rate]' => 8.2,
+                                    '(raw) Email Campaign Metrics[Total Opens]' => 250,
+                                    '(raw) Email Campaign Metrics[Total Hard Bounces]' => 25,
+                                    '(raw) Email Campaign Metrics[Delivery Rate]' => 96.84,
+                                    '(raw) Email Campaign Metrics[Segment]' => 'Small - Medium',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]),
+    ]);
+
+    $service = new PowerBiService;
+    $metrics = $service->getCampaignMetrics('701Pl00000hB2yb');
+
+    expect($metrics)->toBeArray()
+        ->and($metrics['campaign_id'])->toBe('701Pl00000hB2yb')
+        ->and($metrics['summary']['delivered'])->toBe(767)
+        ->and($metrics['summary']['unique_opens'])->toBe(200)
+        ->and($metrics['summary']['unique_clicks'])->toBe(43)
+        ->and($metrics['summary']['hard_bounces'])->toBe(25)
+        ->and($metrics['summary']['open_rate'])->toBe(26.08)
+        ->and($metrics['summary']['click_rate'])->toBe(5.61)
+        ->and($metrics['summary']['click_to_open_rate'])->toBe(21.5)
+        ->and($metrics['summary']['segment'])->toBe('Small - Medium')
+        ->and($metrics['emails'])->toHaveCount(1);
+});
+
+test('getCampaignMetrics returns null when campaign has no metrics', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'fake-token']),
+        'api.powerbi.com/*' => Http::response([
+            'results' => [
+                [
+                    'tables' => [
+                        [
+                            'rows' => [],
+                        ],
+                    ],
+                ],
+            ],
+        ]),
+    ]);
+
+    $service = new PowerBiService;
+    $metrics = $service->getCampaignMetrics('nonexistent');
+
+    expect($metrics)->toBeNull();
 });

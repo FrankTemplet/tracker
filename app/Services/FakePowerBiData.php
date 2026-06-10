@@ -72,25 +72,23 @@ class FakePowerBiData
      *
      * @return array<int, array{member_id: string, first_name: string, last_name: string, email: string, company: string, status_update_date: string}>
      */
-    public static function getMembersByStatus(string $campaignId, string $status): array
+    public static function getMembersByStatus(string $campaignId, string $metric): array
     {
         $engagements = self::getEngagementsByCampaign($campaignId);
 
-        $filtered = array_filter(
-            $engagements,
-            fn ($e) => ($e['(raw) Engagement[Member Status]'] ?? '') === $status
-        );
+        $filtered = array_filter($engagements, function ($engagement) use ($metric) {
+            $status = $engagement['(raw) Engagement[Member Status]'] ?? '';
 
-        return array_map(function ($e) {
-            return [
-                'member_id' => $e['(raw) Engagement[Member ID]'] ?? '',
-                'first_name' => $e['(raw) Engagement[First Name]'] ?? '',
-                'last_name' => $e['(raw) Engagement[Last Name]'] ?? '',
-                'email' => $e['(raw) Engagement[Email]'] ?? '',
-                'company' => $e['(raw) Engagement[Company]'] ?? '',
-                'status_update_date' => $e['(raw) Engagement[Member Status Update Date]'] ?? '',
-            ];
-        }, array_values($filtered));
+            return match ($metric) {
+                'delivered' => $status !== 'Bounced',
+                'unique-opens', 'total-opens' => in_array($status, ['Opened', 'Clicked'], true),
+                'unique-clicks' => $status === 'Clicked',
+                'hard-bounces' => $status === 'Bounced',
+                default => $status === $metric,
+            };
+        });
+
+        return PowerBiDataTransformer::transformMemberDetails(array_values($filtered));
     }
 
     /**
@@ -150,5 +148,62 @@ class FakePowerBiData
         }
 
         return $engagements;
+    }
+
+    /**
+     * Get fake campaign metrics for testing without Power BI credentials.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function getCampaignMetrics(string $campaignId): ?array
+    {
+        $emailRows = [
+            '701Pl00000hB2yb' => [
+                [
+                    '(raw) Email Campaign Metrics[RowID]' => 1,
+                    '(raw) Email Campaign Metrics[Name]' => 'CARIB_JAM_Info_CustomerCare_MSeg_May2025_1',
+                    '(raw) Email Campaign Metrics[Subject]' => 'Customer Care Update',
+                    '(raw) Email Campaign Metrics[Scheduled Date]' => '5/5/2025 10:00:00 AM',
+                    '(raw) Email Campaign Metrics[Campaign ID]' => '701Pl00000hB2yb',
+                    '(raw) Email Campaign Metrics[Campaign Name]' => 'CARIB_JAM_Info_CustomerCare_MSeg_May2025',
+                    '(raw) Email Campaign Metrics[Total Delivered]' => 100,
+                    '(raw) Email Campaign Metrics[Unique Opens]' => 70,
+                    '(raw) Email Campaign Metrics[Open Rate]' => 70,
+                    '(raw) Email Campaign Metrics[Unique Clicks]' => 15,
+                    '(raw) Email Campaign Metrics[Unique Click Through Rate]' => 15,
+                    '(raw) Email Campaign Metrics[Click To Open Ratio]' => 21.43,
+                    '(raw) Email Campaign Metrics[Total Click Through Rate]' => 12,
+                    '(raw) Email Campaign Metrics[Total Opens]' => 90,
+                    '(raw) Email Campaign Metrics[Total Hard Bounces]' => 3,
+                    '(raw) Email Campaign Metrics[Delivery Rate]' => 97.09,
+                    '(raw) Email Campaign Metrics[Segment]' => 'Small - Medium',
+                ],
+                [
+                    '(raw) Email Campaign Metrics[RowID]' => 2,
+                    '(raw) Email Campaign Metrics[Name]' => 'CARIB_JAM_Info_CustomerCare_MSeg_May2025_2',
+                    '(raw) Email Campaign Metrics[Subject]' => 'Follow-up: Customer Care',
+                    '(raw) Email Campaign Metrics[Scheduled Date]' => '5/12/2025 10:00:00 AM',
+                    '(raw) Email Campaign Metrics[Campaign ID]' => '701Pl00000hB2yb',
+                    '(raw) Email Campaign Metrics[Campaign Name]' => 'CARIB_JAM_Info_CustomerCare_MSeg_May2025',
+                    '(raw) Email Campaign Metrics[Total Delivered]' => 50,
+                    '(raw) Email Campaign Metrics[Unique Opens]' => 30,
+                    '(raw) Email Campaign Metrics[Open Rate]' => 60,
+                    '(raw) Email Campaign Metrics[Unique Clicks]' => 10,
+                    '(raw) Email Campaign Metrics[Unique Click Through Rate]' => 20,
+                    '(raw) Email Campaign Metrics[Click To Open Ratio]' => 33.33,
+                    '(raw) Email Campaign Metrics[Total Click Through Rate]' => 18,
+                    '(raw) Email Campaign Metrics[Total Opens]' => 40,
+                    '(raw) Email Campaign Metrics[Total Hard Bounces]' => 2,
+                    '(raw) Email Campaign Metrics[Delivery Rate]' => 96.15,
+                    '(raw) Email Campaign Metrics[Segment]' => 'Small - Medium',
+                ],
+            ],
+        ];
+
+        if (! isset($emailRows[$campaignId])) {
+            return null;
+        }
+
+        return PowerBiDataTransformer::buildCampaignAnalyticsFromEmailRows($emailRows[$campaignId]);
     }
 }

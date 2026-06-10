@@ -140,23 +140,23 @@ class PowerBiService
      * @param  string  $status  Member Status (Opened, Clicked, Bounced, Sent, etc.)
      * @return array<int, array{member_id: string, first_name: string, last_name: string, email: string, company: string, status_update_date: string}>
      */
-    public function getMembersByStatus(string $campaignId, string $status): array
+    public function getMembersByStatus(string $campaignId, string $metric): array
     {
         // Use fake data if credentials are not configured
         if (! $this->hasCredentials()) {
-            return FakePowerBiData::getMembersByStatus($campaignId, $status);
+            return FakePowerBiData::getMembersByStatus($campaignId, $metric);
         }
 
-        $cacheKey = 'powerbi_members_'.md5($campaignId.'_'.$status);
+        $cacheKey = 'powerbi_members_'.md5($campaignId.'_'.$metric);
 
-        $rows = Cache::remember($cacheKey, $this->cacheTtl(), function () use ($campaignId, $status) {
+        $rows = Cache::remember($cacheKey, $this->cacheTtl(), function () use ($campaignId, $metric) {
             $token = $this->getAccessToken();
             $url = $this->buildExecuteQueriesUrl();
 
             $body = [
                 'queries' => [
                     [
-                        'query' => "EVALUATE FILTER('(raw) Engagement', AND('(raw) Engagement'[Campaign ID] = \"$campaignId\", '(raw) Engagement'[Member Status] = \"$status\"))",
+                        'query' => $this->buildMembersByMetricQuery($campaignId, $metric),
                     ],
                 ],
                 'serializerSettings' => [
@@ -167,27 +167,38 @@ class PowerBiService
             $response = Http::withToken($token)->post($url, $body);
 
             if ($response->failed()) {
-                Log::error('Failed to fetch members by status from Power BI', [
+                Log::error('Failed to fetch members by metric from Power BI', [
                     'status' => $response->status(),
                     'body' => $response->body(),
+                    'campaign_id' => $campaignId,
+                    'metric' => $metric,
                 ]);
 
-                throw new \Exception('Failed to fetch members by status: '.$response->status());
+                throw new \Exception('Failed to fetch members by metric: '.$response->status());
             }
 
             return $this->parsePowerBiResponse($response->json());
         });
 
-        return array_map(function ($row) {
-            return [
-                'member_id' => $row['(raw) Engagement[Member ID]'] ?? '',
-                'first_name' => $row['(raw) Engagement[First Name]'] ?? '',
-                'last_name' => $row['(raw) Engagement[Last Name]'] ?? '',
-                'email' => $row['(raw) Engagement[Email]'] ?? '',
-                'company' => $row['(raw) Engagement[Company]'] ?? '',
-                'status_update_date' => $row['(raw) Engagement[Member Status Update Date]'] ?? '',
-            ];
-        }, $rows);
+        return PowerBiDataTransformer::transformMemberDetails($rows);
+    }
+
+    /**
+     * Build a DAX query for member drill-down by campaign summary metric.
+     */
+    private function buildMembersByMetricQuery(string $campaignId, string $metric): string
+    {
+        $table = "'(raw) Engagement'";
+        $campaignFilter = $table.'[Campaign ID] = "'.$campaignId.'"';
+
+        return match ($metric) {
+            'delivered' => 'EVALUATE FILTER('.$table.', AND('.$campaignFilter.', '.$table.'[Member Status] <> "Bounced"))',
+            'unique-opens', 'total-opens' => 'EVALUATE FILTER('.$table.', AND('.$campaignFilter.', '.$table.'[Member Status] IN {"Opened", "Clicked"}))',
+            'unique-clicks' => 'EVALUATE FILTER('.$table.', AND('.$campaignFilter.', '.$table.'[Member Status] = "Clicked"))',
+            'hard-bounces' => 'EVALUATE FILTER('.$table.', AND('.$campaignFilter.', '.$table.'[Member Status] = "Bounced"))',
+            'Opened', 'Clicked', 'Bounced', 'Sent' => 'EVALUATE FILTER('.$table.', AND('.$campaignFilter.', '.$table.'[Member Status] = "'.$metric.'"))',
+            default => throw new \InvalidArgumentException("Unknown member metric: {$metric}"),
+        };
     }
 
     /**
@@ -239,6 +250,74 @@ class PowerBiService
                 ];
             }, $rows);
         });
+    }
+
+    /**
+     * Get campaign analytics from the Email Campaign Metrics table.
+     *
+     * @return array{
+     *     campaign_id: string,
+     *     campaign_name: string,
+     *     segment: string|null,
+     *     summary: array<string, mixed>,
+     *     emails: array<int, array<string, mixed>>
+     * }|null
+     */
+    public function getCampaignMetrics(string $campaignId): ?array
+    {
+        if (! $this->hasCredentials()) {
+            return FakePowerBiData::getCampaignMetrics($campaignId);
+        }
+
+        $cacheKey = 'powerbi_campaign_metrics_'.md5($campaignId);
+
+        return Cache::remember($cacheKey, $this->cacheTtl(), function () use ($campaignId) {
+            return $this->fetchEmailCampaignMetrics($campaignId);
+        });
+    }
+
+    /**
+     * Fetch all email rows for a campaign from Email Campaign Metrics.
+     *
+     * @return array{
+     *     campaign_id: string,
+     *     campaign_name: string,
+     *     segment: string|null,
+     *     summary: array<string, mixed>,
+     *     emails: array<int, array<string, mixed>>
+     * }|null
+     */
+    private function fetchEmailCampaignMetrics(string $campaignId): ?array
+    {
+        $token = $this->getAccessToken();
+        $url = $this->buildExecuteQueriesUrl();
+
+        $body = [
+            'queries' => [
+                [
+                    'query' => "EVALUATE FILTER('(raw) Email Campaign Metrics', '(raw) Email Campaign Metrics'[Campaign ID] = \"$campaignId\")",
+                ],
+            ],
+            'serializerSettings' => [
+                'includeNulls' => true,
+            ],
+        ];
+
+        $response = Http::withToken($token)->post($url, $body);
+
+        if ($response->failed()) {
+            Log::error('Failed to fetch Email Campaign Metrics from Power BI', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'campaign_id' => $campaignId,
+            ]);
+
+            throw new \Exception('Failed to fetch campaign metrics: '.$response->status());
+        }
+
+        $rows = $this->parsePowerBiResponse($response->json());
+
+        return PowerBiDataTransformer::buildCampaignAnalyticsFromEmailRows($rows);
     }
 
     /**

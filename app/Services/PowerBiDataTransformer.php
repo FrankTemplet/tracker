@@ -133,6 +133,130 @@ class PowerBiDataTransformer
     }
 
     /**
+     * Transform a single row from the Email Campaign Metrics table.
+     *
+     * @return array{
+     *     id: string,
+     *     name: string,
+     *     subject: string,
+     *     scheduled_date: string,
+     *     campaign_id: string,
+     *     campaign_name: string,
+     *     delivered: int,
+     *     unique_opens: int,
+     *     open_rate: float,
+     *     unique_clicks: int,
+     *     unique_click_through_rate: float,
+     *     click_to_open_ratio: float,
+     *     total_click_through_rate: float,
+     *     total_opens: int,
+     *     hard_bounces: int,
+     *     delivery_rate: float,
+     *     segment: string|null
+     * }
+     */
+    public static function transformEmailCampaignMetric(array $row): array
+    {
+        $prefix = '(raw) Email Campaign Metrics';
+
+        return [
+            'id' => (string) ($row["{$prefix}[RowID]"] ?? $row["{$prefix}[Name]"] ?? ''),
+            'name' => $row["{$prefix}[Name]"] ?? '',
+            'subject' => $row["{$prefix}[Subject]"] ?? '',
+            'scheduled_date' => $row["{$prefix}[Scheduled Date]"] ?? '',
+            'campaign_id' => $row["{$prefix}[Campaign ID]"] ?? '',
+            'campaign_name' => $row["{$prefix}[Campaign Name]"] ?? '',
+            'delivered' => (int) ($row["{$prefix}[Total Delivered]"] ?? 0),
+            'unique_opens' => (int) ($row["{$prefix}[Unique Opens]"] ?? 0),
+            'open_rate' => round((float) ($row["{$prefix}[Open Rate]"] ?? 0), 2),
+            'unique_clicks' => (int) ($row["{$prefix}[Unique Clicks]"] ?? 0),
+            'unique_click_through_rate' => round((float) ($row["{$prefix}[Unique Click Through Rate]"] ?? 0), 2),
+            'click_to_open_ratio' => round((float) ($row["{$prefix}[Click To Open Ratio]"] ?? 0), 2),
+            'total_click_through_rate' => round((float) ($row["{$prefix}[Total Click Through Rate]"] ?? 0), 2),
+            'total_opens' => (int) ($row["{$prefix}[Total Opens]"] ?? 0),
+            'hard_bounces' => (int) ($row["{$prefix}[Total Hard Bounces]"] ?? 0),
+            'delivery_rate' => round((float) ($row["{$prefix}[Delivery Rate]"] ?? 0), 2),
+            'segment' => $row["{$prefix}[Segment]"] ?? null,
+        ];
+    }
+
+    /**
+     * Build campaign-level analytics from Email Campaign Metrics rows.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array{
+     *     campaign_id: string,
+     *     campaign_name: string,
+     *     segment: string|null,
+     *     summary: array{
+     *         delivered: int,
+     *         unique_opens: int,
+     *         open_rate: float,
+     *         unique_clicks: int,
+     *         click_rate: float,
+     *         unique_click_through_rate: float,
+     *         click_to_open_rate: float,
+     *         total_click_through_rate: float,
+     *         total_opens: int,
+     *         hard_bounces: int,
+     *         delivery_rate: float,
+     *         segment: string|null
+     *     },
+     *     emails: array<int, array<string, mixed>>
+     * }|null
+     */
+    public static function buildCampaignAnalyticsFromEmailRows(array $rows): ?array
+    {
+        if ($rows === []) {
+            return null;
+        }
+
+        $emails = array_map(fn (array $row) => self::transformEmailCampaignMetric($row), $rows);
+
+        $delivered = array_sum(array_column($emails, 'delivered'));
+        $uniqueOpens = array_sum(array_column($emails, 'unique_opens'));
+        $uniqueClicks = array_sum(array_column($emails, 'unique_clicks'));
+        $totalOpens = array_sum(array_column($emails, 'total_opens'));
+        $hardBounces = array_sum(array_column($emails, 'hard_bounces'));
+
+        $openRate = $delivered > 0 ? round(($uniqueOpens / $delivered) * 100, 2) : 0.0;
+        $clickRate = $delivered > 0 ? round(($uniqueClicks / $delivered) * 100, 2) : 0.0;
+        $uniqueClickThroughRate = $clickRate;
+        $clickToOpenRate = $uniqueOpens > 0 ? round(($uniqueClicks / $uniqueOpens) * 100, 2) : 0.0;
+        $deliveryRate = ($delivered + $hardBounces) > 0 ? round(($delivered / ($delivered + $hardBounces)) * 100, 2) : 0.0;
+
+        $totalClickThroughRate = $delivered > 0
+            ? round(array_sum(array_map(
+                fn (array $email) => $email['total_click_through_rate'] * $email['delivered'],
+                $emails
+            )) / $delivered, 2)
+            : 0.0;
+
+        $firstEmail = $emails[0];
+
+        return [
+            'campaign_id' => $firstEmail['campaign_id'],
+            'campaign_name' => $firstEmail['campaign_name'],
+            'segment' => $firstEmail['segment'],
+            'summary' => [
+                'delivered' => $delivered,
+                'unique_opens' => $uniqueOpens,
+                'open_rate' => $openRate,
+                'unique_clicks' => $uniqueClicks,
+                'click_rate' => $clickRate,
+                'unique_click_through_rate' => $uniqueClickThroughRate,
+                'click_to_open_rate' => $clickToOpenRate,
+                'total_click_through_rate' => $totalClickThroughRate,
+                'total_opens' => $totalOpens,
+                'hard_bounces' => $hardBounces,
+                'delivery_rate' => $deliveryRate,
+                'segment' => $firstEmail['segment'],
+            ],
+            'emails' => $emails,
+        ];
+    }
+
+    /**
      * Transform member engagement details to frontend format.
      *
      * @param  array  $members  Member engagement records

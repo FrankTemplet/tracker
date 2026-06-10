@@ -66,15 +66,25 @@ class PowerBiControllerIntegrationTest extends TestCase
                         'tables' => [
                             [
                                 'rows' => [
-                                    ['(raw) Engagement[Member Status]' => 'Sent'],
-                                    ['(raw) Engagement[Member Status]' => 'Sent'],
-                                    ['(raw) Engagement[Member Status]' => 'Sent'],
-                                    ['(raw) Engagement[Member Status]' => 'Sent'],
-                                    ['(raw) Engagement[Member Status]' => 'Sent'],
-                                    ['(raw) Engagement[Member Status]' => 'Opened'],
-                                    ['(raw) Engagement[Member Status]' => 'Opened'],
-                                    ['(raw) Engagement[Member Status]' => 'Clicked'],
-                                    ['(raw) Engagement[Member Status]' => 'Bounced'],
+                                    [
+                                        '(raw) Email Campaign Metrics[RowID]' => 1,
+                                        '(raw) Email Campaign Metrics[Name]' => 'Test Email 1',
+                                        '(raw) Email Campaign Metrics[Subject]' => 'Test Subject',
+                                        '(raw) Email Campaign Metrics[Scheduled Date]' => '5/5/2025 10:00:00 AM',
+                                        '(raw) Email Campaign Metrics[Campaign ID]' => '701Pl00000hB2yb',
+                                        '(raw) Email Campaign Metrics[Campaign Name]' => 'Test Campaign',
+                                        '(raw) Email Campaign Metrics[Total Delivered]' => 150,
+                                        '(raw) Email Campaign Metrics[Unique Opens]' => 100,
+                                        '(raw) Email Campaign Metrics[Open Rate]' => 66.67,
+                                        '(raw) Email Campaign Metrics[Unique Clicks]' => 25,
+                                        '(raw) Email Campaign Metrics[Unique Click Through Rate]' => 16.67,
+                                        '(raw) Email Campaign Metrics[Click To Open Ratio]' => 25,
+                                        '(raw) Email Campaign Metrics[Total Click Through Rate]' => 12,
+                                        '(raw) Email Campaign Metrics[Total Opens]' => 130,
+                                        '(raw) Email Campaign Metrics[Total Hard Bounces]' => 5,
+                                        '(raw) Email Campaign Metrics[Delivery Rate]' => 96.77,
+                                        '(raw) Email Campaign Metrics[Segment]' => 'Enterprise',
+                                    ],
                                 ],
                             ],
                         ],
@@ -88,12 +98,31 @@ class PowerBiControllerIntegrationTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonStructure([
             'success',
-            'data' => ['sent', 'delivered', 'opened', 'clicked', 'bounced', 'open_rate', 'click_rate', 'bounce_rate'],
+            'data' => [
+                'campaign_id',
+                'campaign_name',
+                'segment',
+                'summary' => [
+                    'delivered',
+                    'unique_opens',
+                    'open_rate',
+                    'unique_clicks',
+                    'click_rate',
+                    'unique_click_through_rate',
+                    'click_to_open_rate',
+                    'total_click_through_rate',
+                    'total_opens',
+                    'hard_bounces',
+                    'delivery_rate',
+                    'segment',
+                ],
+                'emails',
+            ],
         ]);
-        $response->assertJsonPath('data.sent', 9);  // total record count = sent
-        $response->assertJsonPath('data.opened', 3);  // 2 Opened + 1 Clicked (implicit open)
-        $response->assertJsonPath('data.clicked', 1);
-        $response->assertJsonPath('data.bounced', 1);
+        $response->assertJsonPath('data.summary.delivered', 150);
+        $response->assertJsonPath('data.summary.unique_opens', 100);
+        $response->assertJsonPath('data.summary.unique_clicks', 25);
+        $response->assertJsonPath('data.summary.hard_bounces', 5);
     }
 
     public function test_campaign_members_endpoint_returns_member_list(): void
