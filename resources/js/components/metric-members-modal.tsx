@@ -179,9 +179,16 @@ export function MetricMembersModal({
                 </div>
 
                 {!isLoading && !error && members.length > 0 && (
-                    <p className="text-xs text-muted-foreground text-right mt-2">
-                        {members.length.toLocaleString()} member{members.length === 1 ? '' : 's'} found
-                    </p>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4 pt-3 border-t text-xs text-muted-foreground">
+                        <p className="italic max-w-xl">
+                            {metric === 'unique-opens' && (
+                                "* Note: Any discrepancy in unique opens may be due to data synchronization delays or Pardot tracking variations."
+                            )}
+                        </p>
+                        <p className="font-semibold shrink-0">
+                            {members.length.toLocaleString()} member{members.length === 1 ? '' : 's'} found
+                        </p>
+                    </div>
                 )}
             </DialogContent>
         </Dialog>
