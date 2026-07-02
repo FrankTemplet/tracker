@@ -6,8 +6,10 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Mail } from 'lucide-react';
+import { Mail, Download } from 'lucide-react';
 import type { EmailCampaignMetric, MetricDrilldownKey } from '@/components/campaign-metrics';
+import { Button } from '@/components/ui/button';
+import { exportToExcel } from '@/lib/export-to-excel';
 
 interface MetricEmailsModalProps {
     open: boolean;
@@ -23,6 +25,7 @@ const METRIC_VALUE_LABEL: Record<MetricDrilldownKey, string> = {
     'total-opens': 'Total Opens',
     'unique-clicks': 'Unique Clicks',
     'hard-bounces': 'Hard Bounces',
+    'registered-appointment': 'Registered / Schedule Appointment',
 };
 
 function filterEmailsByMetric(emails: EmailCampaignMetric[], metric: MetricDrilldownKey): EmailCampaignMetric[] {
@@ -38,6 +41,8 @@ function filterEmailsByMetric(emails: EmailCampaignMetric[], metric: MetricDrill
                 return email.unique_clicks > 0;
             case 'hard-bounces':
                 return email.hard_bounces > 0;
+            default:
+                return false;
         }
     });
 }
@@ -54,6 +59,8 @@ function getMetricValue(email: EmailCampaignMetric, metric: MetricDrilldownKey):
             return email.unique_clicks;
         case 'hard-bounces':
             return email.hard_bounces;
+        default:
+            return 0;
     }
 }
 
@@ -89,6 +96,19 @@ export function MetricEmailsModal({
     }, [emails, metric]);
 
     const valueLabel = metric ? METRIC_VALUE_LABEL[metric] : '';
+
+    const handleDownload = () => {
+        if (!metric) return;
+        exportToExcel(
+            filteredEmails.map((email) => ({
+                Subject: email.subject,
+                'Send Name': email.name,
+                Scheduled: formatScheduledDate(email.scheduled_date),
+                [valueLabel]: getMetricValue(email, metric),
+            })),
+            title,
+        );
+    };
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -149,12 +169,18 @@ export function MetricEmailsModal({
                 </div>
 
                 {filteredEmails.length > 0 && metric && (
-                    <p className="text-xs text-muted-foreground text-right">
-                        {filteredEmails.length.toLocaleString()} sent email{filteredEmails.length === 1 ? '' : 's'}
-                        {' · '}
-                        {filteredEmails.reduce((sum, email) => sum + getMetricValue(email, metric), 0).toLocaleString()}{' '}
-                        {valueLabel.toLowerCase()}
-                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                        <Button variant="outline" size="sm" onClick={handleDownload} className="gap-1.5">
+                            <Download className="h-3.5 w-3.5" />
+                            Download Excel
+                        </Button>
+                        <p className="text-xs text-muted-foreground text-right">
+                            {filteredEmails.length.toLocaleString()} sent email{filteredEmails.length === 1 ? '' : 's'}
+                            {' · '}
+                            {filteredEmails.reduce((sum, email) => sum + getMetricValue(email, metric), 0).toLocaleString()}{' '}
+                            {valueLabel.toLowerCase()}
+                        </p>
+                    </div>
                 )}
             </DialogContent>
         </Dialog>

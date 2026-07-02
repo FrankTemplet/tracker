@@ -7,9 +7,11 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Users, Mail, Loader2 } from 'lucide-react';
+import { Users, Mail, Loader2, Download } from 'lucide-react';
 import { campaignMembers } from '@/actions/App/Http/Controllers/PowerBiController';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { exportToExcel } from '@/lib/export-to-excel';
 
 export interface Member {
     member_id: string;
@@ -98,6 +100,18 @@ export function MetricMembersModal({
         };
     }, [open, campaignId, metric, submit]);
 
+    const handleDownload = () => {
+        exportToExcel(
+            members.map((member) => ({
+                Name: `${member.first_name} ${member.last_name}`,
+                Email: member.email,
+                Company: member.company,
+                Date: formatStatusDate(member.status_update_date),
+            })),
+            title,
+        );
+    };
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-4xl max-h-[85vh] flex flex-col">
@@ -185,9 +199,15 @@ export function MetricMembersModal({
                                 "* Note: Any discrepancy in unique opens may be due to data synchronization delays or Pardot tracking variations."
                             )}
                         </p>
-                        <p className="font-semibold shrink-0">
-                            {members.length.toLocaleString()} member{members.length === 1 ? '' : 's'} found
-                        </p>
+                        <div className="flex items-center gap-3 shrink-0">
+                            <p className="font-semibold">
+                                {members.length.toLocaleString()} member{members.length === 1 ? '' : 's'} found
+                            </p>
+                            <Button variant="outline" size="sm" onClick={handleDownload} className="gap-1.5">
+                                <Download className="h-3.5 w-3.5" />
+                                Download Excel
+                            </Button>
+                        </div>
                     </div>
                 )}
             </DialogContent>

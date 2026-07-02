@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/select';
 import { Globe, Calendar } from 'lucide-react';
 
-export type Region = 'carib' | 'latam';
+export type Region = 'carib' | 'latam' | 'networks';
 
 interface CampaignFiltersProps {
     selectedRegion?: Region;
@@ -53,6 +53,7 @@ export function CampaignFilters({
                         <SelectContent>
                             <SelectItem value="carib">Carib</SelectItem>
                             <SelectItem value="latam">LATAM</SelectItem>
+                            <SelectItem value="networks">Networks</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>

@@ -2,9 +2,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Users, X, Eye, MousePointerClick, AlertTriangle, Send } from 'lucide-react';
+import { Users, X, Eye, MousePointerClick, AlertTriangle, Send, Download } from 'lucide-react';
 import type { ComponentType } from 'react';
 import type { MemberStatus } from '@/components/campaign-metrics';
+import { exportToExcel } from '@/lib/export-to-excel';
 
 export interface Member {
     member_id: string;
@@ -39,6 +40,18 @@ export function MemberListPanel({ members, status, isLoading = false, onClose }:
     const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.Sent;
     const { Icon } = config;
 
+    const handleDownload = () => {
+        exportToExcel(
+            members.map((member) => ({
+                Name: `${member.first_name} ${member.last_name}`,
+                Email: member.email,
+                Company: member.company,
+                Date: member.status_update_date,
+            })),
+            `${config.label}-members`,
+        );
+    };
+
     return (
         <Card>
             <CardHeader className="pb-3">
@@ -52,9 +65,17 @@ export function MemberListPanel({ members, status, isLoading = false, onClose }:
                             {isLoading ? '…' : members.length.toLocaleString()}
                         </Badge>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0">
-                        <X className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        {!isLoading && members.length > 0 && (
+                            <Button variant="outline" size="sm" onClick={handleDownload} className="gap-1.5">
+                                <Download className="h-3.5 w-3.5" />
+                                Download Excel
+                            </Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0">
+                            <X className="h-4 w-4" />
+                        </Button>
+                    </div>
                 </div>
             </CardHeader>
             <CardContent className="p-0">

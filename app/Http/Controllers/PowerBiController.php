@@ -39,13 +39,18 @@ class PowerBiController extends Controller
                     $campaignName = strtolower($campaign['name']);
                     $region = strtolower($selectedRegion);
 
-                    // Check if campaign contains the region (carib or latam)
+                    // Only keep campaigns starting with an allowed prefix (drops names starting with a number)
+                    $hasAllowedPrefix = str_starts_with($campaignName, 'carib')
+                        || str_starts_with($campaignName, 'latam')
+                        || str_starts_with($campaignName, 'networks');
+
+                    // Check if campaign contains the region (carib, latam or networks)
                     $hasRegion = str_contains($campaignName, $region);
 
                     // Check if campaign contains the year
                     $hasYear = str_contains($campaignName, $selectedYear);
 
-                    return $hasRegion && $hasYear;
+                    return $hasAllowedPrefix && $hasRegion && $hasYear;
                 }));
             }
 
