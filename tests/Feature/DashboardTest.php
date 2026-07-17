@@ -73,6 +73,151 @@ test('dashboard loads campaigns when region and year are selected', function () 
         );
 });
 
+test('campaigns are split between dashboard, events and webinars pages', function () {
+    $this->mock(PowerBiService::class)
+        ->shouldReceive('hasCredentials')->andReturn(true)
+        ->shouldReceive('getUniqueCampaigns')
+        ->andReturn([
+            [
+                'campaign_id' => '701CARIB0000001',
+                'campaign_name' => 'CARIB_JAM_2025_Test',
+                'business_unit' => 'CARIB',
+                'start_date' => '2025-05-01',
+            ],
+            [
+                'campaign_id' => '701CARIB0000002',
+                'campaign_name' => 'CARIB_EVENT_2025_Launch',
+                'business_unit' => 'CARIB',
+                'start_date' => '2025-05-01',
+            ],
+            [
+                'campaign_id' => '701CARIB0000003',
+                'campaign_name' => 'CARIB_Webinar_2025_Cloud',
+                'business_unit' => 'CARIB',
+                'start_date' => '2025-05-01',
+            ],
+        ]);
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $params = ['region' => 'carib', 'year' => '2025'];
+
+    $this->get(route('dashboard', $params))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('dashboard')
+            ->has('campaigns', 1)
+            ->where('campaigns.0.name', 'CARIB_JAM_2025_Test')
+        );
+
+    $this->get(route('events', $params))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('events')
+            ->has('campaigns', 1)
+            ->where('campaigns.0.name', 'CARIB_EVENT_2025_Launch')
+        );
+
+    $this->get(route('webinars', $params))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('webinars')
+            ->has('campaigns', 1)
+            ->where('campaigns.0.name', 'CARIB_Webinar_2025_Cloud')
+        );
+});
+
+test('networks users see networks and latam campaigns but not carib', function () {
+    $this->mock(PowerBiService::class)
+        ->shouldReceive('hasCredentials')->andReturn(true)
+        ->shouldReceive('getUniqueCampaigns')
+        ->andReturn([
+            [
+                'campaign_id' => '701CARIB0000001',
+                'campaign_name' => 'CARIB_JAM_2025_Test',
+                'business_unit' => 'CARIB',
+                'start_date' => '2025-05-01',
+            ],
+            [
+                'campaign_id' => '701LATAM0000001',
+                'campaign_name' => 'LATAM_MX_2025_Test',
+                'business_unit' => 'LATAM',
+                'start_date' => '2025-05-01',
+            ],
+            [
+                'campaign_id' => '701NETW00000001',
+                'campaign_name' => 'NETWORKS_2025_Test',
+                'business_unit' => 'Networks',
+                'start_date' => '2025-05-01',
+            ],
+        ]);
+
+    $user = User::factory()->networks()->create();
+    $this->actingAs($user);
+
+    $response = $this->get(route('dashboard', ['region' => 'latam', 'year' => '2025']));
+    $response->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('dashboard')
+            ->has('campaigns', 1)
+            ->where('campaigns.0.name', 'LATAM_MX_2025_Test')
+            ->where('availableRegions', ['networks', 'latam'])
+        );
+});
+
+test('carib users cannot filter by a region they are not assigned to', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    // Region "latam" is not allowed for carib users, so it is ignored
+    // and no campaigns are fetched
+    $response = $this->get(route('dashboard', ['region' => 'latam', 'year' => '2025']));
+    $response->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('dashboard')
+            ->where('selectedRegion', null)
+            ->where('campaigns', [])
+            ->where('availableRegions', ['carib'])
+        );
+});
+
+test('campaigns outside the user region cannot be selected on the dashboard', function () {
+    $this->mock(PowerBiService::class)
+        ->shouldReceive('hasCredentials')->andReturn(true)
+        ->shouldReceive('getUniqueCampaigns')
+        ->andReturn([
+            [
+                'campaign_id' => '701CARIB0000001',
+                'campaign_name' => 'CARIB_JAM_2025_Test',
+                'business_unit' => 'CARIB',
+                'start_date' => '2025-05-01',
+            ],
+            [
+                'campaign_id' => '701LATAM0000001',
+                'campaign_name' => 'LATAM_MX_2025_Test',
+                'business_unit' => 'LATAM',
+                'start_date' => '2025-05-01',
+            ],
+        ])
+        ->shouldReceive('getCampaignMetrics')->never();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $response = $this->get(route('dashboard', [
+        'region' => 'carib',
+        'year' => '2025',
+        'campaign_id' => '701LATAM0000001',
+    ]));
+    $response->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('dashboard')
+            ->where('selectedCampaignId', null)
+            ->where('analytics', null)
+        );
+});
+
 test('dashboard loads analytics when campaign is selected', function () {
     $campaignId = '701Pl00000hB2yb';
 
@@ -110,19 +255,6 @@ test('dashboard loads analytics when campaign is selected', function () {
                 'segment' => 'Small - Medium',
             ],
             'emails' => [],
-        ])
-        ->shouldReceive('getMembersByStatus')
-        ->once()
-        ->with($campaignId, 'unique-opens')
-        ->andReturn([
-            [
-                'member_id' => '00vPl00000UmUCI',
-                'first_name' => 'Shanequa',
-                'last_name' => 'Hall',
-                'email' => 'elloquentshanae@gmail.com',
-                'company' => 'Drink Pure',
-                'status_update_date' => '5/19/2025',
-            ],
         ])
         ->shouldReceive('getMembersByStatus')
         ->once()

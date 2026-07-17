@@ -56,11 +56,34 @@ class PowerBiControllerIntegrationTest extends TestCase
     {
         $this->actingAs(User::factory()->create());
 
-        Http::fake([
-            'login.microsoftonline.com/*' => Http::response([
-                'access_token' => 'fake_token_abc123',
-            ]),
-            'api.powerbi.com/*' => Http::response([
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'login.microsoftonline.com')) {
+                return Http::response(['access_token' => 'fake_token_abc123']);
+            }
+
+            // Campaign lookup used for the region authorization check
+            if (str_contains($request->body(), 'SUMMARIZECOLUMNS')) {
+                return Http::response([
+                    'results' => [
+                        [
+                            'tables' => [
+                                [
+                                    'rows' => [
+                                        [
+                                            '(raw) Engagement[Campaign ID]' => '701Pl00000hB2yb',
+                                            '(raw) Engagement[Campaign Name]' => 'CARIB_Test_Campaign_2025',
+                                            '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',
+                                            '(raw) Engagement[Start Date]' => '5/5/2025',
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ]);
+            }
+
+            return Http::response([
                 'results' => [
                     [
                         'tables' => [
@@ -90,8 +113,8 @@ class PowerBiControllerIntegrationTest extends TestCase
                         ],
                     ],
                 ],
-            ]),
-        ]);
+            ]);
+        });
 
         $response = $this->getJson('/api/powerbi/campaigns/701Pl00000hB2yb/metrics');
 
@@ -129,11 +152,34 @@ class PowerBiControllerIntegrationTest extends TestCase
     {
         $this->actingAs(User::factory()->create());
 
-        Http::fake([
-            'login.microsoftonline.com/*' => Http::response([
-                'access_token' => 'fake_token_abc123',
-            ]),
-            'api.powerbi.com/*' => Http::response([
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'login.microsoftonline.com')) {
+                return Http::response(['access_token' => 'fake_token_abc123']);
+            }
+
+            // Campaign lookup used for the region authorization check
+            if (str_contains($request->body(), 'SUMMARIZECOLUMNS')) {
+                return Http::response([
+                    'results' => [
+                        [
+                            'tables' => [
+                                [
+                                    'rows' => [
+                                        [
+                                            '(raw) Engagement[Campaign ID]' => '701Pl00000hB2yb',
+                                            '(raw) Engagement[Campaign Name]' => 'CARIB_Test_Campaign_2025',
+                                            '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',
+                                            '(raw) Engagement[Start Date]' => '5/5/2025',
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ]);
+            }
+
+            return Http::response([
                 'results' => [
                     [
                         'tables' => [
@@ -160,8 +206,8 @@ class PowerBiControllerIntegrationTest extends TestCase
                         ],
                     ],
                 ],
-            ]),
-        ]);
+            ]);
+        });
 
         $response = $this->getJson('/api/powerbi/campaigns/701Pl00000hB2yb/members/Opened');
 

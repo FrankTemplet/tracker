@@ -17,13 +17,44 @@ class PowerBiController extends Controller
     ) {}
 
     /**
-     * Show the Power BI dashboard.
+     * Show the dashboard (campaigns that are neither events nor webinars).
      */
     public function dashboard(Request $request): Response
     {
-        $selectedRegion = $request->query('region');
+        return $this->renderCampaignPage($request, 'dashboard');
+    }
+
+    /**
+     * Show event campaigns (name contains "event").
+     */
+    public function events(Request $request): Response
+    {
+        return $this->renderCampaignPage($request, 'events');
+    }
+
+    /**
+     * Show webinar campaigns (name contains "web").
+     */
+    public function webinars(Request $request): Response
+    {
+        return $this->renderCampaignPage($request, 'webinars');
+    }
+
+    /**
+     * Render one of the campaign pages (dashboard, events or webinars).
+     */
+    protected function renderCampaignPage(Request $request, string $page): Response
+    {
+        $allowedRegions = $request->user()->allowedRegions();
+
+        $selectedRegion = strtolower((string) $request->query('region')) ?: null;
         $selectedYear = $request->query('year');
         $selectedCampaignId = $request->query('campaign_id');
+
+        // Users can only filter by a region they are assigned to
+        if ($selectedRegion && ! in_array($selectedRegion, $allowedRegions, true)) {
+            $selectedRegion = null;
+        }
 
         try {
             $campaigns = [];
@@ -35,23 +66,27 @@ class PowerBiController extends Controller
                 $allCampaigns = PowerBiDataTransformer::transformCampaigns($rawCampaigns);
 
                 // Filter by region and year
-                $campaigns = array_values(array_filter($allCampaigns, function ($campaign) use ($selectedRegion, $selectedYear) {
+                $campaigns = array_values(array_filter($allCampaigns, function ($campaign) use ($selectedRegion, $selectedYear, $allowedRegions, $page) {
                     $campaignName = strtolower($campaign['name']);
-                    $region = strtolower($selectedRegion);
 
-                    // Only keep campaigns starting with an allowed prefix (drops names starting with a number)
-                    $hasAllowedPrefix = str_starts_with($campaignName, 'carib')
-                        || str_starts_with($campaignName, 'latam')
-                        || str_starts_with($campaignName, 'networks');
+                    // Prefix must be one of the user's allowed regions
+                    // (also drops names starting with a number)
+                    $hasAllowedPrefix = $this->campaignNameInRegions($campaignName, $allowedRegions);
 
                     // Check if campaign contains the region (carib, latam or networks)
-                    $hasRegion = str_contains($campaignName, $region);
+                    $hasRegion = str_contains($campaignName, $selectedRegion);
 
                     // Check if campaign contains the year
                     $hasYear = str_contains($campaignName, $selectedYear);
 
-                    return $hasAllowedPrefix && $hasRegion && $hasYear;
+                    return $hasAllowedPrefix && $hasRegion && $hasYear
+                        && $this->campaignMatchesPage($campaignName, $page);
                 }));
+            }
+
+            // A campaign is only accessible when it appears in the user's filtered list
+            if ($selectedCampaignId && ! in_array($selectedCampaignId, array_column($campaigns, 'id'), true)) {
+                $selectedCampaignId = null;
             }
 
             $analytics = null;
@@ -88,11 +123,12 @@ class PowerBiController extends Controller
                 }
             }
 
-            return Inertia::render('dashboard', [
+            return Inertia::render($page, [
                 'campaigns' => $campaigns,
                 'selectedCampaignId' => $selectedCampaignId,
                 'selectedRegion' => $selectedRegion,
                 'selectedYear' => $selectedYear,
+                'availableRegions' => $allowedRegions,
                 'analytics' => $analytics,
                 'lastUpdated' => now()->toIso8601String(),
             ]);
@@ -103,11 +139,12 @@ class PowerBiController extends Controller
                 'line' => $e->getLine(),
             ]);
 
-            return Inertia::render('dashboard', [
+            return Inertia::render($page, [
                 'campaigns' => [],
                 'selectedCampaignId' => null,
                 'selectedRegion' => $selectedRegion,
                 'selectedYear' => $selectedYear,
+                'availableRegions' => $allowedRegions,
                 'error' => 'Failed to load dashboard data. Please try again later.',
             ]);
         }
@@ -116,12 +153,20 @@ class PowerBiController extends Controller
     /**
      * Get all available email campaigns.
      */
-    public function campaigns(): JsonResponse
+    public function campaigns(Request $request): JsonResponse
     {
+        $allowedRegions = $request->user()->allowedRegions();
+
         try {
             // Fetch unique campaigns from Power BI (already deduplicated)
             $rawCampaigns = $this->powerBiService->getUniqueCampaigns();
             $campaigns = PowerBiDataTransformer::transformCampaigns($rawCampaigns);
+
+            // Only expose campaigns from the user's allowed regions
+            $campaigns = array_values(array_filter(
+                $campaigns,
+                fn (array $campaign) => $this->campaignNameInRegions($campaign['name'], $allowedRegions)
+            ));
 
             return response()->json([
                 'success' => true,
@@ -142,9 +187,16 @@ class PowerBiController extends Controller
     /**
      * Get aggregated metrics for a specific campaign.
      */
-    public function campaignMetrics(string $campaignId): JsonResponse
+    public function campaignMetrics(Request $request, string $campaignId): JsonResponse
     {
         try {
+            if (! $this->campaignIsAllowed($campaignId, $request->user()->allowedRegions())) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You are not authorized to view this campaign.',
+                ], 403);
+            }
+
             $metrics = $this->powerBiService->getCampaignMetrics($campaignId);
 
             if ($metrics === null) {
@@ -174,9 +226,16 @@ class PowerBiController extends Controller
     /**
      * Get members with a specific status for a campaign (drill-down).
      */
-    public function campaignMembers(string $campaignId, string $metric): JsonResponse
+    public function campaignMembers(Request $request, string $campaignId, string $metric): JsonResponse
     {
         try {
+            if (! $this->campaignIsAllowed($campaignId, $request->user()->allowedRegions())) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You are not authorized to view this campaign.',
+                ], 403);
+            }
+
             $members = $this->powerBiService->getMembersByStatus($campaignId, $metric);
 
             return response()->json([
@@ -200,6 +259,58 @@ class PowerBiController extends Controller
                 'message' => 'Failed to fetch members. Please try again later.',
             ], 500);
         }
+    }
+
+    /**
+     * Events lists campaigns whose name contains "event", Webinars those
+     * containing "web" (unless they are events), and Dashboard the rest.
+     */
+    protected function campaignMatchesPage(string $campaignName, string $page): bool
+    {
+        $name = strtolower($campaignName);
+
+        $isEvent = str_contains($name, 'event');
+        $isWebinar = ! $isEvent && str_contains($name, 'web');
+
+        return match ($page) {
+            'events' => $isEvent,
+            'webinars' => $isWebinar,
+            default => ! $isEvent && ! $isWebinar,
+        };
+    }
+
+    /**
+     * Check if a campaign name starts with one of the given region prefixes.
+     *
+     * @param  list<string>  $allowedRegions
+     */
+    protected function campaignNameInRegions(string $campaignName, array $allowedRegions): bool
+    {
+        $name = strtolower($campaignName);
+
+        foreach ($allowedRegions as $region) {
+            if (str_starts_with($name, $region)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Determine if a campaign belongs to one of the user's allowed regions.
+     *
+     * @param  list<string>  $allowedRegions
+     */
+    protected function campaignIsAllowed(string $campaignId, array $allowedRegions): bool
+    {
+        foreach ($this->powerBiService->getUniqueCampaigns() as $campaign) {
+            if (($campaign['campaign_id'] ?? '') === $campaignId) {
+                return $this->campaignNameInRegions($campaign['campaign_name'] ?? '', $allowedRegions);
+            }
+        }
+
+        return false;
     }
 
     /**

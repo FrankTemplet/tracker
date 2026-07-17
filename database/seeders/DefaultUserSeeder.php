@@ -14,6 +14,17 @@ class DefaultUserSeeder extends Seeder
             'name' => 'Patricia Gómez',
             'email' => 'patricia.gomez@templet.io',
             'password' => Hash::make('Templet2026+'),
+            'region' => 'carib',
+            'role' => 'admin',
+            'email_verified_at' => now(),
+        ]);
+
+        User::create([
+            'name' => 'Francisco Templet',
+            'email' => 'francisco@templet.io',
+            'password' => Hash::make('Templet2026+'),
+            'region' => 'carib',
+            'role' => 'admin',
             'email_verified_at' => now(),
         ]);
     }

@@ -11,7 +11,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
-#[Fillable(['name', 'email', 'password'])]
+#[Fillable(['name', 'email', 'password', 'region', 'role'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -30,5 +30,30 @@ class User extends Authenticatable
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Determine if the user has the admin role.
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
+
+    /**
+     * Campaign regions this user is allowed to see.
+     * Admins see every region; viewers assigned to "networks" can also see "latam" campaigns.
+     *
+     * @return list<string>
+     */
+    public function allowedRegions(): array
+    {
+        if ($this->isAdmin()) {
+            return ['carib', 'networks', 'latam'];
+        }
+
+        return $this->region === 'networks'
+            ? ['networks', 'latam']
+            : ['carib'];
     }
 }

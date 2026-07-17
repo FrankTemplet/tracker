@@ -9,11 +9,18 @@ import { Globe, Calendar } from 'lucide-react';
 
 export type Region = 'carib' | 'latam' | 'networks';
 
+const REGION_LABELS: Record<Region, string> = {
+    carib: 'Carib',
+    latam: 'LATAM',
+    networks: 'Networks',
+};
+
 interface CampaignFiltersProps {
     selectedRegion?: Region;
     selectedYear?: string;
     onRegionChange: (region: Region) => void;
     onYearChange: (year: string) => void;
+    availableRegions?: Region[];
     availableYears?: string[];
 }
 
@@ -22,6 +29,7 @@ export function CampaignFilters({
     selectedYear,
     onRegionChange,
     onYearChange,
+    availableRegions = ['carib', 'latam', 'networks'],
     availableYears = [],
 }: CampaignFiltersProps) {
     // If no years provided, generate last 5 years
@@ -51,9 +59,11 @@ export function CampaignFilters({
                             <SelectValue placeholder="Select region" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="carib">Carib</SelectItem>
-                            <SelectItem value="latam">LATAM</SelectItem>
-                            <SelectItem value="networks">Networks</SelectItem>
+                            {availableRegions.map((region) => (
+                                <SelectItem key={region} value={region}>
+                                    {REGION_LABELS[region]}
+                                </SelectItem>
+                            ))}
                         </SelectContent>
                     </Select>
                 </div>

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\PowerBiController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
@@ -11,6 +12,15 @@ Route::inertia('/', 'auth/login', [
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [PowerBiController::class, 'dashboard'])->name('dashboard');
+    Route::get('events', [PowerBiController::class, 'events'])->name('events');
+    Route::get('webinars', [PowerBiController::class, 'webinars'])->name('webinars');
+
+    // User management (admins only)
+    Route::middleware('admin')->group(function () {
+        Route::get('users', [UserController::class, 'index'])->name('users.index');
+        Route::post('users', [UserController::class, 'store'])->name('users.store');
+        Route::patch('users/{user}', [UserController::class, 'update'])->name('users.update');
+    });
 
     // Power BI API endpoints
     Route::prefix('api/powerbi')->name('powerbi.')->middleware('throttle:60,1')->group(function () {
