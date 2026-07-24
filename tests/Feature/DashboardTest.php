@@ -182,6 +182,24 @@ test('carib users cannot filter by a region they are not assigned to', function 
         );
 });
 
+test('dashboard ignores years outside 2025 and 2026', function () {
+    $this->mock(PowerBiService::class)
+        ->shouldReceive('hasCredentials')->andReturn(true)
+        ->shouldReceive('getUniqueCampaigns')->never();
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $response = $this->get(route('dashboard', ['region' => 'carib', 'year' => '2024']));
+    $response->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('dashboard')
+            ->where('selectedRegion', 'carib')
+            ->where('selectedYear', null)
+            ->where('campaigns', [])
+        );
+});
+
 test('campaigns outside the user region cannot be selected on the dashboard', function () {
     $this->mock(PowerBiService::class)
         ->shouldReceive('hasCredentials')->andReturn(true)

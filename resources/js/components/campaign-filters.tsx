@@ -24,6 +24,8 @@ interface CampaignFiltersProps {
     availableYears?: string[];
 }
 
+const ALLOWED_YEARS = ['2026', '2025'];
+
 export function CampaignFilters({
     selectedRegion,
     selectedYear,
@@ -32,13 +34,14 @@ export function CampaignFilters({
     availableRegions = ['carib', 'latam', 'networks'],
     availableYears = [],
 }: CampaignFiltersProps) {
-    // If no years provided, generate last 5 years
-    const years = availableYears.length > 0
-        ? availableYears
-        : Array.from({ length: 5 }, (_, i) => {
-            const year = new Date().getFullYear() - i;
-            return year.toString();
-        });
+    const allowedYearSet = new Set<string>(ALLOWED_YEARS);
+
+    const years = ALLOWED_YEARS.filter((year) => {
+        return availableYears.length === 0 || availableYears.includes(year);
+    });
+
+    const yearOptions = years.length > 0 ? years : [...ALLOWED_YEARS];
+    const yearValue = selectedYear && allowedYearSet.has(selectedYear) ? selectedYear : undefined;
 
     return (
         <>
@@ -79,14 +82,14 @@ export function CampaignFilters({
                         Year
                     </p>
                     <Select
-                        value={selectedYear}
+                        value={yearValue}
                         onValueChange={onYearChange}
                     >
                         <SelectTrigger className="h-7 border-0 p-0 shadow-none bg-transparent font-medium focus:ring-0 focus:ring-offset-0 text-sm">
                             <SelectValue placeholder="Select year" />
                         </SelectTrigger>
                         <SelectContent>
-                            {years.map((year) => (
+                            {yearOptions.map((year) => (
                                 <SelectItem key={year} value={year}>
                                     {year}
                                 </SelectItem>

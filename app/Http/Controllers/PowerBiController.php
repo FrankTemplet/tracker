@@ -12,6 +12,8 @@ use Inertia\Response;
 
 class PowerBiController extends Controller
 {
+    private const ALLOWED_YEARS = ['2025', '2026'];
+
     public function __construct(
         protected PowerBiService $powerBiService
     ) {}
@@ -54,6 +56,10 @@ class PowerBiController extends Controller
         // Users can only filter by a region they are assigned to
         if ($selectedRegion && ! in_array($selectedRegion, $allowedRegions, true)) {
             $selectedRegion = null;
+        }
+
+        if ($selectedYear !== null && ! in_array((string) $selectedYear, self::ALLOWED_YEARS, true)) {
+            $selectedYear = null;
         }
 
         try {
