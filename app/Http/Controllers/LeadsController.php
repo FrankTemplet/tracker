@@ -24,7 +24,6 @@ class LeadsController extends Controller
             'variant' => $isCarib ? 'carib' : 'latam',
             'summary' => $summary,
             'leads' => $this->mockLeads(),
-            'availableRegions' => $allowedRegions,
         ]);
     }
 

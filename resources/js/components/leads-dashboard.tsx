@@ -1,6 +1,5 @@
 import { Users, TrendingUp, BarChart3, Target } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { CampaignFilters, type Region } from '@/components/campaign-filters';
 import type { LucideIcon } from 'lucide-react';
 
 export interface LeadSummaryLatam {
@@ -23,9 +22,6 @@ export interface LeadsDashboardPageProps {
     variant: 'latam' | 'carib';
     summary: LeadSummaryLatam | LeadSummaryCarib;
     leads: Lead[];
-    availableRegions?: Region[];
-    selectedRegion?: Region;
-    selectedYear?: string;
 }
 
 interface StatCardProps {
@@ -99,14 +95,7 @@ function LeadsTable({ leads }: { leads: Lead[] }) {
     );
 }
 
-export function LeadsDashboard({
-    variant,
-    summary,
-    leads,
-    availableRegions,
-    selectedRegion,
-    selectedYear,
-}: LeadsDashboardPageProps) {
+export function LeadsDashboard({ variant, summary, leads }: LeadsDashboardPageProps) {
     const isCarib = variant === 'carib';
     const caribSummary = summary as LeadSummaryCarib;
 
@@ -117,16 +106,6 @@ export function LeadsDashboard({
                 <p className="text-xs text-muted-foreground mt-0.5">
                     {isCarib ? 'Caribbean region leads overview' : 'LATAM & Networks region leads overview'}
                 </p>
-            </div>
-
-            <div className="flex flex-wrap items-stretch gap-3">
-                <CampaignFilters
-                    selectedRegion={selectedRegion}
-                    selectedYear={selectedYear}
-                    onRegionChange={() => {}}
-                    onYearChange={() => {}}
-                    availableRegions={availableRegions}
-                />
             </div>
 
             {isCarib ? (
