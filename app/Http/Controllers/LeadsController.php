@@ -11,10 +11,8 @@ class LeadsController extends Controller
     public function index(Request $request): Response
     {
         $user = $request->user();
-        $allowedRegions = $user->allowedRegions();
 
-        // Determine which layout to show based on user's region
-        $isCarib = in_array('carib', $allowedRegions) && ! in_array('latam', $allowedRegions);
+        $isCarib = $user->region === 'carib';
 
         $summary = $isCarib
             ? ['leads_created' => 32, 'leads_assigned' => 49, 'mqls' => 60, 'sqls' => 80]
