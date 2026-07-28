@@ -45,7 +45,7 @@ export function CampaignSelector({
             <div className="flex-1 min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Campaign</p>
                 <Select
-                    value={selectedCampaignId}
+                    value={selectedCampaignId ?? ''}
                     onValueChange={onCampaignChange}
                     disabled={isLoading || isDisabled || campaigns.length === 0}
                 >

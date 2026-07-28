@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
-import { BookOpen, CalendarDays, FolderGit2, LayoutGrid, MonitorPlay, Users } from 'lucide-react';
+import { BookOpen, CalendarDays, FolderGit2, LayoutGrid, MonitorPlay, TrendingUp, Users } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -13,7 +13,7 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard, events, webinars } from '@/routes';
+import { dashboard, events, leads, webinars } from '@/routes';
 import { index as usersIndex } from '@/routes/users';
 import type { NavItem } from '@/types';
 
@@ -32,6 +32,14 @@ const mainNavItems: NavItem[] = [
         title: 'Dashboard',
         href: dashboard(),
         icon: LayoutGrid,
+    },
+];
+
+const leadsNavItems: NavItem[] = [
+    {
+        title: 'Lead Management',
+        href: leads(),
+        icon: TrendingUp,
     },
 ];
 
@@ -58,10 +66,13 @@ const footerNavItems: NavItem[] = [
 
 export function AppSidebar() {
     const { auth } = usePage().props;
-    const navItems =
-        auth.user.role === 'admin'
-            ? [...mainNavItems, ...adminNavItems]
-            : mainNavItems;
+    const isAdmin = auth.user.role === 'admin';
+
+    const navItems = [
+        ...mainNavItems,
+        ...leadsNavItems,
+        ...(isAdmin ? adminNavItems : []),
+    ];
 
     return (
         <Sidebar collapsible="icon" variant="inset">

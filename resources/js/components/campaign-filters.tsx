@@ -41,7 +41,7 @@ export function CampaignFilters({
     });
 
     const yearOptions = years.length > 0 ? years : [...ALLOWED_YEARS];
-    const yearValue = selectedYear && allowedYearSet.has(selectedYear) ? selectedYear : undefined;
+    const yearValue = selectedYear && allowedYearSet.has(selectedYear) ? selectedYear : '';
 
     return (
         <>
@@ -55,7 +55,7 @@ export function CampaignFilters({
                         Region
                     </p>
                     <Select
-                        value={selectedRegion}
+                        value={selectedRegion ?? ''}
                         onValueChange={onRegionChange}
                     >
                         <SelectTrigger className="h-7 border-0 p-0 shadow-none bg-transparent font-medium focus:ring-0 focus:ring-offset-0 text-sm">

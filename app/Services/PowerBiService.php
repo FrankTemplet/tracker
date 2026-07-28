@@ -296,7 +296,7 @@ class PowerBiService
         $body = [
             'queries' => [
                 [
-                    'query' => "EVALUATE FILTER('(raw) Email Campaign Metrics', '(raw) Email Campaign Metrics'[Campaign ID] = \"$campaignId\")",
+                    'query' => "EVALUATE FILTER('(raw) Email Campaign Metrics', LEFT('(raw) Email Campaign Metrics'[Campaign ID], 15) = \"$campaignId\")",
                 ],
             ],
             'serializerSettings' => [

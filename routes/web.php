@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\LeadsController;
 use App\Http\Controllers\PowerBiController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
@@ -14,6 +15,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [PowerBiController::class, 'dashboard'])->name('dashboard');
     Route::get('events', [PowerBiController::class, 'events'])->name('events');
     Route::get('webinars', [PowerBiController::class, 'webinars'])->name('webinars');
+    Route::get('leads', [LeadsController::class, 'index'])->name('leads');
 
     // User management (admins only)
     Route::middleware('admin')->group(function () {
