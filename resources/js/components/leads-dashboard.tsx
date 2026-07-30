@@ -19,7 +19,6 @@ export interface Lead {
     owner: string;
     email: string;
     company: string;
-    kind: string;
 }
 
 export interface LeadsDashboardPageProps {
@@ -80,14 +79,13 @@ function LeadsTable({ leads }: { leads: Lead[] }) {
                                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Name</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Company / Account</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Kind</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Owner</th>
                             </tr>
                         </thead>
                         <tbody>
                             {leads.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground text-sm">
+                                    <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground text-sm">
                                         No leads found
                                     </td>
                                 </tr>
@@ -100,7 +98,6 @@ function LeadsTable({ leads }: { leads: Lead[] }) {
                                         <td className="px-4 py-3 font-medium">{lead.name}</td>
                                         <td className="px-4 py-3 text-muted-foreground">{lead.email}</td>
                                         <td className="px-4 py-3 text-muted-foreground">{lead.company}</td>
-                                        <td className="px-4 py-3 text-muted-foreground">{lead.kind}</td>
                                         <td className="px-4 py-3 text-muted-foreground">{lead.owner}</td>
                                     </tr>
                                 ))
@@ -164,9 +161,9 @@ export function LeadsDashboard({ variant, summary, leads, error }: LeadsDashboar
             )}
 
             {isCarib ? (
-                /* CARIB: 2×2 cards on the left, table on the right */
-                <div className="flex gap-6 items-start">
-                    <div className="grid grid-cols-2 gap-4 shrink-0 w-fit">
+                /* CARIB: 4 cards in a row above, table full-width below */
+                <div className="flex flex-col gap-6">
+                    <div className="grid grid-cols-4 gap-4">
                         <StatCard
                             label="Leads created"
                             value={caribSummary.leads_created}
@@ -196,9 +193,7 @@ export function LeadsDashboard({ variant, summary, leads, error }: LeadsDashboar
                             iconBgClass="bg-amber-500/10"
                         />
                     </div>
-                    <div className="flex-1 min-w-0">
-                        <LeadsTable leads={leads} />
-                    </div>
+                    <LeadsTable leads={leads} />
                 </div>
             ) : (
                 /* LATAM: 3 cards in a row, table full-width below */

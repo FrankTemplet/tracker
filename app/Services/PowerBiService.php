@@ -453,7 +453,6 @@ class PowerBiService
                     'owner' => $row['(raw) Lead v2[Lead Owner]'] ?? '',
                     'email' => $row['(raw) Lead v2[Email]'] ?? '',
                     'company' => $row['(raw) Lead v2[Company / Account]'] ?? '',
-                    'kind' => $row['(raw) Lead v2[Kind]'] ?? '',
                 ];
             }
 
