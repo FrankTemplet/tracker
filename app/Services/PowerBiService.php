@@ -385,6 +385,148 @@ class PowerBiService
     }
 
     /**
+     * Get all leads from (raw) Lead v2, filtered by region countries.
+     *
+     * @param  'carib'|'latam'  $region
+     * @return array{summary: array{leads_created: int, mqls: int, sqls: int}, leads: array<int, array>}
+     */
+    public function getLeadsData(string $region): array
+    {
+        $cacheKey = 'powerbi_leads_'.$region;
+
+        return Cache::remember($cacheKey, $this->cacheTtl(), function () use ($region) {
+            $token = $this->getAccessToken();
+            $url = $this->buildExecuteQueriesUrl();
+
+            $countryFilter = $this->buildLeadsCountryFilter($region);
+
+            $response = Http::withToken($token)->post($url, [
+                'queries' => [[
+                    'query' => "EVALUATE FILTER('(raw) Lead v2', {$countryFilter})",
+                ]],
+                'serializerSettings' => ['includeNulls' => true],
+            ]);
+
+            if ($response->failed()) {
+                Log::error('Failed to fetch leads from Power BI', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+                throw new \Exception('Failed to fetch leads: '.$response->status());
+            }
+
+            $rows = $this->parsePowerBiResponse($response->json());
+
+            $leadsCreated = 0;
+            $leadsAssigned = 0;
+            $mqls = 0;
+            $sqls = 0;
+            $leads = [];
+
+            foreach ($rows as $row) {
+                $createdBy = $row['(raw) Lead v2[Created By]'] ?? '';
+                $createdAlias = $row['(raw) Lead v2[Created Alias]'] ?? '';
+                $stage = $row['(raw) Lead v2[Lead Stage]'] ?? '';
+
+                if ($createdBy === 'Sales Outcomes Lead Triage') {
+                    $leadsCreated++;
+                }
+
+                if ($createdAlias === 'b2bmausr' || $createdAlias === 'LeadTrge') {
+                    $leadsAssigned++;
+                }
+
+                if ($stage === 'MQL') {
+                    $mqls++;
+                }
+
+                if ($stage === 'SQL') {
+                    $sqls++;
+                }
+
+                $firstName = $row['(raw) Lead v2[First Name]'] ?? '';
+                $lastName = $row['(raw) Lead v2[Last Name]'] ?? '';
+                $name = trim("$firstName $lastName") ?: ($row['(raw) Lead v2[Company / Account]'] ?? '');
+
+                $leads[] = [
+                    'name' => $name,
+                    'owner' => $row['(raw) Lead v2[Lead Owner]'] ?? '',
+                    'email' => $row['(raw) Lead v2[Email]'] ?? '',
+                    'company' => $row['(raw) Lead v2[Company / Account]'] ?? '',
+                    'kind' => $row['(raw) Lead v2[Kind]'] ?? '',
+                ];
+            }
+
+            return [
+                'summary' => [
+                    'leads_created' => $leadsCreated,
+                    'leads_assigned' => $leadsAssigned,
+                    'mqls' => $mqls,
+                    'sqls' => $sqls,
+                ],
+                'leads' => $leads,
+            ];
+        });
+    }
+
+    /**
+     * Build DAX country filter for the leads region.
+     */
+    private function buildLeadsCountryFilter(string $region): string
+    {
+        $col = "'(raw) Lead v2'[Country]";
+
+        // Caribbean: sovereign island nations + dependent territories only
+        // "Networks - *" and "Business - *" groupings go to LATAM
+        $caribCountries = [
+            // Sovereign nations
+            'Jamaica', 'Barbados', 'Bahamas', 'Antigua and Barbuda', 'Antigua',
+            'Dominica', 'Dominican Republic', 'Republica Dominicana', 'República Dominicana',
+            'Grenada', 'St. Lucia', 'St. Kitts', 'St. Kitts & Nevis',
+            'St. Vincent', 'St. Vincent & Grenadines', 'St. Vincent and the Grenadines', 'St. Vincent & the Grenadines',
+            'Trinidad', 'Trinidad and Tobago', 'Trinidad & Tobago', 'trinidad-and-tobago',
+            'Cuba', 'Haiti',
+            // Territories
+            'Anguilla', 'British Virgin Islands', 'British Virgin Isalnds', 'british-virgin-islands',
+            'Cayman', 'Montserrat', 'Turks & Caicos', 'Turks and Caicos',
+            'Puerto Rico', 'Curacao', 'Curaçao', 'Bonaire', 'St. Eustatius',
+            'St. Maarten', 'French St. Martin',
+            // Regional grouping
+            'Caribbean Region',
+        ];
+
+        // LATAM + Networks: Mexico + Central America + South America
+        // All "Networks - *" groupings go here regardless of sub-region
+        // All "Business - *" groupings go here
+        // Wholesale goes here
+        $latamCountries = [
+            // Mexico
+            'Mexico',
+            // Central America
+            'Guatemala', 'El Salvador', 'Honduras', 'Nicaragua', 'Costa Rica', 'Panama', 'Panamá', 'Belize',
+            // South America
+            'Colombia', 'Venezuela', 'Ecuador', 'Peru', 'Bolivia', 'Argentina', 'Chile',
+            'Uruguay', 'Paraguay', 'Brazil', 'Guyana', 'Suriname',
+            // Business groupings → LATAM
+            'Business - Colombia', 'Business - Guatemala', 'Business - El Salvador',
+            'Business - Honduras', 'Business - Dominican Republic',
+            // Networks groupings → always LATAM + Networks
+            'Networks - Mexico and Central America',
+            'Networks - Andean (Colombia, Venezuela, Ecuador)',
+            'Networks - United States of America',
+            'Networks - Caribbean',
+            // Other
+            'Wholesale',
+        ];
+
+        $countries = $region === 'carib' ? $caribCountries : $latamCountries;
+
+        $quoted = implode(', ', array_map(fn ($c) => '"'.addslashes($c).'"', $countries));
+
+        return "{$col} IN {{$quoted}}";
+    }
+
+    /**
      * Build the URL for executeQueries endpoint.
      */
     private function buildExecuteQueriesUrl(): string

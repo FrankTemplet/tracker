@@ -1,5 +1,7 @@
-import { Users, TrendingUp, BarChart3, Target } from 'lucide-react';
+import { useState } from 'react';
+import { TrendingUp, BarChart3, Target, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import type { LucideIcon } from 'lucide-react';
 
 export interface LeadSummaryLatam {
@@ -14,14 +16,17 @@ export interface LeadSummaryCarib extends LeadSummaryLatam {
 
 export interface Lead {
     name: string;
-    created_date: string;
     owner: string;
+    email: string;
+    company: string;
+    kind: string;
 }
 
 export interface LeadsDashboardPageProps {
     variant: 'latam' | 'carib';
     summary: LeadSummaryLatam | LeadSummaryCarib;
     leads: Lead[];
+    error?: string;
 }
 
 interface StatCardProps {
@@ -48,54 +53,98 @@ function StatCard({ label, value, icon: Icon, colorClass, iconBgClass }: StatCar
     );
 }
 
+const PAGE_SIZE = 20;
+
 function LeadsTable({ leads }: { leads: Lead[] }) {
+    const [page, setPage] = useState(1);
+
+    const totalPages = Math.max(1, Math.ceil(leads.length / PAGE_SIZE));
+    const start = (page - 1) * PAGE_SIZE;
+    const pageLeads = leads.slice(start, start + PAGE_SIZE);
+
     return (
         <Card>
             <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold">Leads</CardTitle>
+                <div className="flex items-center justify-between">
+                    <CardTitle className="text-base font-semibold">Leads</CardTitle>
+                    <span className="text-xs text-muted-foreground">
+                        {leads.length.toLocaleString()} total
+                    </span>
+                </div>
             </CardHeader>
             <CardContent className="p-0">
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-t border-b bg-muted/40">
-                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                    Name
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                    Created Date
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                    Owner
-                                </th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Name</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Company / Account</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Kind</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Owner</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {leads.map((lead, i) => (
-                                <tr
-                                    key={i}
-                                    className="border-b last:border-0 hover:bg-muted/30 transition-colors"
-                                >
-                                    <td className="px-6 py-3 font-medium">{lead.name}</td>
-                                    <td className="px-6 py-3 text-muted-foreground">
-                                        {new Date(lead.created_date).toLocaleDateString('en-US', {
-                                            year: 'numeric',
-                                            month: 'short',
-                                            day: 'numeric',
-                                        })}
+                            {leads.length === 0 ? (
+                                <tr>
+                                    <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground text-sm">
+                                        No leads found
                                     </td>
-                                    <td className="px-6 py-3 text-muted-foreground">{lead.owner}</td>
                                 </tr>
-                            ))}
+                            ) : (
+                                pageLeads.map((lead, i) => (
+                                    <tr
+                                        key={start + i}
+                                        className="border-b last:border-0 hover:bg-muted/30 transition-colors"
+                                    >
+                                        <td className="px-4 py-3 font-medium">{lead.name}</td>
+                                        <td className="px-4 py-3 text-muted-foreground">{lead.email}</td>
+                                        <td className="px-4 py-3 text-muted-foreground">{lead.company}</td>
+                                        <td className="px-4 py-3 text-muted-foreground">{lead.kind}</td>
+                                        <td className="px-4 py-3 text-muted-foreground">{lead.owner}</td>
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>
+
+                {totalPages > 1 && (
+                    <div className="flex items-center justify-between border-t px-6 py-3">
+                        <span className="text-xs text-muted-foreground">
+                            {start + 1}–{Math.min(start + PAGE_SIZE, leads.length)} of {leads.length.toLocaleString()}
+                        </span>
+                        <div className="flex items-center gap-1">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setPage(p => Math.max(1, p - 1))}
+                                disabled={page === 1}
+                                className="h-7 w-7 p-0"
+                            >
+                                <ChevronLeft className="h-4 w-4" />
+                            </Button>
+                            <span className="text-xs px-2 text-muted-foreground">
+                                {page} / {totalPages}
+                            </span>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                disabled={page === totalPages}
+                                className="h-7 w-7 p-0"
+                            >
+                                <ChevronRight className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </div>
+                )}
             </CardContent>
         </Card>
     );
 }
 
-export function LeadsDashboard({ variant, summary, leads }: LeadsDashboardPageProps) {
+export function LeadsDashboard({ variant, summary, leads, error }: LeadsDashboardPageProps) {
     const isCarib = variant === 'carib';
     const caribSummary = summary as LeadSummaryCarib;
 
@@ -107,6 +156,12 @@ export function LeadsDashboard({ variant, summary, leads }: LeadsDashboardPagePr
                     {isCarib ? 'Caribbean region leads overview' : 'LATAM & Networks region leads overview'}
                 </p>
             </div>
+
+            {error && (
+                <div className="rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                    {error}
+                </div>
+            )}
 
             {isCarib ? (
                 /* CARIB: 2×2 cards on the left, table on the right */
@@ -121,8 +176,8 @@ export function LeadsDashboard({ variant, summary, leads }: LeadsDashboardPagePr
                         />
                         <StatCard
                             label="Leads assigned"
-                            value={summary.leads_assigned}
-                            icon={Users}
+                            value={caribSummary.leads_assigned}
+                            icon={TrendingUp}
                             colorClass="text-sky-600 dark:text-sky-400"
                             iconBgClass="bg-sky-500/10"
                         />
@@ -152,7 +207,7 @@ export function LeadsDashboard({ variant, summary, leads }: LeadsDashboardPagePr
                         <StatCard
                             label="Leads assigned"
                             value={summary.leads_assigned}
-                            icon={Users}
+                            icon={TrendingUp}
                             colorClass="text-sky-600 dark:text-sky-400"
                             iconBgClass="bg-sky-500/10"
                         />
