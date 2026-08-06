@@ -493,6 +493,7 @@ export function LeadsDashboard({ variant, summary, leads, error }: LeadsDashboar
                         ))}
                     </SelectContent>
                 </Select>
+                
                 <Select value={periodFilter} onValueChange={v => setPeriodFilter(v)}>
                     <SelectTrigger className="h-8 w-44 text-xs">
                         <SelectValue placeholder="Period" />
