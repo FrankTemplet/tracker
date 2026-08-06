@@ -392,7 +392,7 @@ class PowerBiService
      */
     public function getLeadsData(string $region): array
     {
-        $cacheKey = 'powerbi_leads_'.$region;
+        $cacheKey = 'powerbi_leads_v2_'.$region;
 
         return Cache::remember($cacheKey, $this->cacheTtl(), function () use ($region) {
             $token = $this->getAccessToken();
@@ -453,6 +453,11 @@ class PowerBiService
                     'owner' => $row['(raw) Lead v2[Lead Owner]'] ?? '',
                     'email' => $row['(raw) Lead v2[Email]'] ?? '',
                     'company' => $row['(raw) Lead v2[Company / Account]'] ?? '',
+                    'created_date' => $row['(raw) Lead v2[Create Date]'] ?? '',
+                    'country' => $row['(raw) Lead v2[Country]'] ?? '',
+                    'lead_stage' => $stage,
+                    'created_by' => $createdBy,
+                    'created_alias' => $createdAlias,
                 ];
             }
 
