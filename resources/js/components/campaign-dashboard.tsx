@@ -1,15 +1,18 @@
 import { Head, router } from '@inertiajs/react';
+import { X } from 'lucide-react';
 import { useState } from 'react';
-import { CampaignSelector, type Campaign } from '@/components/campaign-selector';
-import { CampaignFilters, type Region } from '@/components/campaign-filters';
 import { CampaignDetails } from '@/components/campaign-details';
-import { CampaignMetrics, type CampaignAnalyticsData } from '@/components/campaign-metrics';
+import { CampaignFilters  } from '@/components/campaign-filters';
+import type {Region} from '@/components/campaign-filters';
+import { CampaignMetrics  } from '@/components/campaign-metrics';
+import type {CampaignAnalyticsData} from '@/components/campaign-metrics';
+import { CampaignSelector  } from '@/components/campaign-selector';
+import type {Campaign} from '@/components/campaign-selector';
+import { DashboardSkeleton } from '@/components/dashboard-skeleton';
 import { EmailCampaignList } from '@/components/email-campaign-list';
 import { RefreshIndicator } from '@/components/refresh-indicator';
-import { DashboardSkeleton } from '@/components/dashboard-skeleton';
 import { Button } from '@/components/ui/button';
 import type { RouteDefinition, RouteQueryOptions } from '@/wayfinder';
-import { X } from 'lucide-react';
 
 export interface CampaignDashboardPageProps {
     campaigns?: Campaign[];
@@ -165,6 +168,7 @@ export function CampaignDashboard({
                                 metrics={analytics?.summary ?? null}
                                 emails={analytics?.emails ?? []}
                                 isLoading={isLoading}
+                                region={selectedRegion}
                             />
                             {analytics && analytics.emails.length > 0 && (
                                 <EmailCampaignList emails={analytics.emails} />

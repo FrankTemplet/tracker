@@ -121,6 +121,15 @@ function getLeadsByCard(leads: Lead[], card: CardKey): Lead[] {
     }
 }
 
+function countLeadsByCard(leads: Lead[]): Record<CardKey, number> {
+    return {
+        leads_created: getLeadsByCard(leads, 'leads_created').length,
+        leads_assigned: getLeadsByCard(leads, 'leads_assigned').length,
+        mqls: getLeadsByCard(leads, 'mqls').length,
+        sqls: getLeadsByCard(leads, 'sqls').length,
+    };
+}
+
 const CARD_LABELS: Record<CardKey, string> = {
     leads_created: "Leads Created",
     leads_assigned: "Leads Assigned",
@@ -276,67 +285,21 @@ function LeadRows({ leads, onSelect }: { leads: Lead[]; onSelect: (lead: Lead) =
 const TABLE_HEADERS = ['Name', 'Email', 'Company / Account', 'Owner', 'Country', 'Create Date'];
 
 // ---------------------------------------------------------------------------
-// Drill-down modal table (with its own filters)
+// Drill-down modal table (inherits the dashboard filters)
 // ---------------------------------------------------------------------------
 
-function FilteredLeadsTable({ leads, onSelectLead }: { leads: Lead[]; onSelectLead: (lead: Lead) => void }) {
+function ModalLeadsTable({ leads, onSelectLead }: { leads: Lead[]; onSelectLead: (lead: Lead) => void }) {
     const [page, setPage] = useState(1);
-    const [countryFilter, setCountryFilter] = useState('all');
-    const [periodFilter, setPeriodFilter] = useState('all');
 
-    const countryOptions = useMemo(
-        () => [...new Set(leads.map(l => l.country).filter(Boolean))].sort(),
-        [leads],
-    );
-
-    const filtered = useMemo(() => {
-        let result = leads;
-        if (countryFilter !== 'all') result = result.filter(l => l.country === countryFilter);
-        result = filterByPeriod(result, periodFilter);
-        return result;
-    }, [leads, countryFilter, periodFilter]);
-
-    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const totalPages = Math.max(1, Math.ceil(leads.length / PAGE_SIZE));
     const safePage = Math.min(page, totalPages);
     const start = (safePage - 1) * PAGE_SIZE;
-    const pageLeads = filtered.slice(start, start + PAGE_SIZE);
-    const hasActiveFilters = countryFilter !== 'all' || periodFilter !== 'all';
+    const pageLeads = leads.slice(start, start + PAGE_SIZE);
 
     return (
         <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <Filter className="h-3.5 w-3.5" />
-                    Filters
-                </div>
-                <Select value={countryFilter} onValueChange={v => { setCountryFilter(v); setPage(1); }}>
-                    <SelectTrigger className="h-8 w-44 text-xs">
-                        <SelectValue placeholder="Country" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all" className="text-xs">All countries</SelectItem>
-                        {countryOptions.map(c => (
-                            <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-                <Select value={periodFilter} onValueChange={v => { setPeriodFilter(v); setPage(1); }}>
-                    <SelectTrigger className="h-8 w-40 text-xs">
-                        <SelectValue placeholder="Period" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {PERIOD_OPTIONS.map(o => (
-                            <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-                {hasActiveFilters && (
-                    <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground"
-                        onClick={() => { setCountryFilter('all'); setPeriodFilter('all'); setPage(1); }}>
-                        Clear
-                    </Button>
-                )}
-                <span className="ml-auto text-xs text-muted-foreground">{filtered.length.toLocaleString()} records</span>
+            <div className="flex items-center justify-end">
+                <span className="text-xs text-muted-foreground">{leads.length.toLocaleString()} records</span>
             </div>
 
             <div className="overflow-x-auto rounded-lg border">
@@ -357,7 +320,7 @@ function FilteredLeadsTable({ leads, onSelectLead }: { leads: Lead[]; onSelectLe
             {totalPages > 1 && (
                 <div className="flex items-center justify-between px-1">
                     <span className="text-xs text-muted-foreground">
-                        {start + 1}–{Math.min(start + PAGE_SIZE, filtered.length)} of {filtered.length.toLocaleString()}
+                        {start + 1}–{Math.min(start + PAGE_SIZE, leads.length)} of {leads.length.toLocaleString()}
                     </span>
                     <div className="flex items-center gap-1">
                         <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1} className="h-7 w-7 p-0">
@@ -433,9 +396,8 @@ function LeadsTable({ leads, onSelectLead }: { leads: Lead[]; onSelectLead: (lea
 // Dashboard
 // ---------------------------------------------------------------------------
 
-export function LeadsDashboard({ variant, summary, leads, error }: LeadsDashboardPageProps) {
+export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProps) {
     const isCarib = variant === 'carib';
-    const caribSummary = summary as LeadSummaryCarib;
 
     const [countryFilter, setCountryFilter] = useState('all');
     const [periodFilter, setPeriodFilter] = useState('all');
@@ -456,10 +418,22 @@ export function LeadsDashboard({ variant, summary, leads, error }: LeadsDashboar
 
     const hasActiveFilters = countryFilter !== 'all' || periodFilter !== 'all';
 
+    // Cards, table and drill-down modal all read from the same filtered set.
+    const counts = useMemo(() => countLeadsByCard(filteredLeads), [filteredLeads]);
+
     const modalLeads = useMemo(
-        () => (modalCard ? getLeadsByCard(leads, modalCard) : []),
-        [leads, modalCard],
+        () => (modalCard ? getLeadsByCard(filteredLeads, modalCard) : []),
+        [filteredLeads, modalCard],
     );
+
+    const activeFilterLabel = useMemo(() => {
+        const parts: string[] = [];
+        if (countryFilter !== 'all') parts.push(countryFilter);
+        if (periodFilter !== 'all') {
+            parts.push(PERIOD_OPTIONS.find(o => o.value === periodFilter)?.label ?? periodFilter);
+        }
+        return parts.join(' · ');
+    }, [countryFilter, periodFilter]);
 
     return (
         <div className="flex h-full flex-col gap-6 p-4 md:p-6">
@@ -515,16 +489,16 @@ export function LeadsDashboard({ variant, summary, leads, error }: LeadsDashboar
             {isCarib ? (
                 <div className="flex flex-col gap-6">
                     <div className="grid grid-cols-4 gap-4">
-                        <StatCard label="Leads created" value={caribSummary.leads_created} icon={TrendingUp}
+                        <StatCard label="Leads created" value={counts.leads_created} icon={TrendingUp}
                             colorClass="text-emerald-600 dark:text-emerald-400" iconBgClass="bg-emerald-500/10"
                             onClick={() => setModalCard('leads_created')} />
-                        <StatCard label="Leads assigned" value={caribSummary.leads_assigned} icon={TrendingUp}
+                        <StatCard label="Leads assigned" value={counts.leads_assigned} icon={TrendingUp}
                             colorClass="text-sky-600 dark:text-sky-400" iconBgClass="bg-sky-500/10"
                             onClick={() => setModalCard('leads_assigned')} />
-                        <StatCard label="MQL's" value={summary.mqls} icon={Target}
+                        <StatCard label="MQL's" value={counts.mqls} icon={Target}
                             colorClass="text-violet-600 dark:text-violet-400" iconBgClass="bg-violet-500/10"
                             onClick={() => setModalCard('mqls')} />
-                        <StatCard label="SQL's" value={summary.sqls} icon={BarChart3}
+                        <StatCard label="SQL's" value={counts.sqls} icon={BarChart3}
                             colorClass="text-amber-600 dark:text-amber-400" iconBgClass="bg-amber-500/10"
                             onClick={() => setModalCard('sqls')} />
                     </div>
@@ -533,13 +507,13 @@ export function LeadsDashboard({ variant, summary, leads, error }: LeadsDashboar
             ) : (
                 <div className="flex flex-col gap-6">
                     <div className="grid grid-cols-3 gap-4">
-                        <StatCard label="Leads assigned" value={summary.leads_assigned} icon={TrendingUp}
+                        <StatCard label="Leads assigned" value={counts.leads_assigned} icon={TrendingUp}
                             colorClass="text-sky-600 dark:text-sky-400" iconBgClass="bg-sky-500/10"
                             onClick={() => setModalCard('leads_assigned')} />
-                        <StatCard label="MQL's" value={summary.mqls} icon={Target}
+                        <StatCard label="MQL's" value={counts.mqls} icon={Target}
                             colorClass="text-violet-600 dark:text-violet-400" iconBgClass="bg-violet-500/10"
                             onClick={() => setModalCard('mqls')} />
-                        <StatCard label="SQL's" value={summary.sqls} icon={BarChart3}
+                        <StatCard label="SQL's" value={counts.sqls} icon={BarChart3}
                             colorClass="text-amber-600 dark:text-amber-400" iconBgClass="bg-amber-500/10"
                             onClick={() => setModalCard('sqls')} />
                     </div>
@@ -552,10 +526,13 @@ export function LeadsDashboard({ variant, summary, leads, error }: LeadsDashboar
                 <DialogContent className="w-[85vw] !max-w-none max-h-[85vh] flex flex-col gap-4">
                     <DialogHeader>
                         <DialogTitle>{modalCard ? CARD_LABELS[modalCard] : ''}</DialogTitle>
+                        {activeFilterLabel && (
+                            <p className="text-xs text-muted-foreground">Filtered by {activeFilterLabel}</p>
+                        )}
                     </DialogHeader>
                     <div className="flex-1 overflow-y-auto">
                         {modalCard && (
-                            <FilteredLeadsTable
+                            <ModalLeadsTable
                                 leads={modalLeads}
                                 onSelectLead={lead => { setSelectedLead(lead); }}
                             />

@@ -1,11 +1,11 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import { BarChart3, Eye, MousePointerClick, AlertTriangle, Mail, TrendingUp, Users } from 'lucide-react';
 import { useState } from 'react';
 import type { ComponentType } from 'react';
 import { MetricEmailsModal } from '@/components/metric-emails-modal';
 import { MetricMembersModal } from '@/components/metric-members-modal';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export interface CampaignMetricsData {
     delivered: number;
@@ -132,9 +132,10 @@ interface CampaignMetricsProps {
     metrics: CampaignMetricsData | null;
     emails?: EmailCampaignMetric[];
     isLoading?: boolean;
+    region?: string;
 }
 
-export function CampaignMetrics({ campaignId, metrics, emails = [], isLoading = false }: CampaignMetricsProps) {
+export function CampaignMetrics({ campaignId, metrics, emails = [], isLoading = false, region }: CampaignMetricsProps) {
     const [activeMetric, setActiveMetric] = useState<MetricDrilldownKey | null>(null);
     const [activeMembersMetric, setActiveMembersMetric] = useState<string | null>(null);
     const [modalTitle, setModalTitle] = useState('');
@@ -151,6 +152,7 @@ export function CampaignMetrics({ campaignId, metrics, emails = [], isLoading = 
             if (emails.length === 0) {
                 return;
             }
+
             setActiveMetric(metric);
             setModalTitle(title);
         }
@@ -161,6 +163,7 @@ export function CampaignMetrics({ campaignId, metrics, emails = [], isLoading = 
         setActiveMembersMetric(null);
         setModalTitle('');
     };
+
     if (!metrics && !isLoading) {
         return (
             <Card className="border-dashed">
@@ -285,6 +288,8 @@ export function CampaignMetrics({ campaignId, metrics, emails = [], isLoading = 
                 emails={emails}
                 metric={activeMetric}
                 title={modalTitle}
+                campaignId={campaignId}
+                region={region}
             />
 
             <MetricMembersModal

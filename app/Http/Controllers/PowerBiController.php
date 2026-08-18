@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\AuthorizesCampaigns;
 use App\Services\PowerBiDataTransformer;
 use App\Services\PowerBiService;
 use Illuminate\Http\JsonResponse;
@@ -12,6 +13,8 @@ use Inertia\Response;
 
 class PowerBiController extends Controller
 {
+    use AuthorizesCampaigns;
+
     private const ALLOWED_YEARS = ['2025', '2026'];
 
     public function __construct(
@@ -283,40 +286,6 @@ class PowerBiController extends Controller
             'webinars' => $isWebinar,
             default => ! $isEvent && ! $isWebinar,
         };
-    }
-
-    /**
-     * Check if a campaign name starts with one of the given region prefixes.
-     *
-     * @param  list<string>  $allowedRegions
-     */
-    protected function campaignNameInRegions(string $campaignName, array $allowedRegions): bool
-    {
-        $name = strtolower($campaignName);
-
-        foreach ($allowedRegions as $region) {
-            if (str_starts_with($name, $region)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Determine if a campaign belongs to one of the user's allowed regions.
-     *
-     * @param  list<string>  $allowedRegions
-     */
-    protected function campaignIsAllowed(string $campaignId, array $allowedRegions): bool
-    {
-        foreach ($this->powerBiService->getUniqueCampaigns() as $campaign) {
-            if (($campaign['campaign_id'] ?? '') === $campaignId) {
-                return $this->campaignNameInRegions($campaign['campaign_name'] ?? '', $allowedRegions);
-            }
-        }
-
-        return false;
     }
 
     /**

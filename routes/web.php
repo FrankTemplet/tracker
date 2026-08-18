@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\EmailEngagementController;
 use App\Http\Controllers\LeadsController;
 use App\Http\Controllers\PowerBiController;
 use Illuminate\Support\Facades\Route;
@@ -30,6 +31,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('campaigns/{campaignId}/metrics', [PowerBiController::class, 'campaignMetrics'])->name('campaign.metrics');
         Route::get('campaigns/{campaignId}/members/{status}', [PowerBiController::class, 'campaignMembers'])->name('campaign.members');
         Route::get('embed-token/{reportId}', [PowerBiController::class, 'embedToken'])->name('embed.token');
+    });
+
+    // Dataverse API endpoints (Carib only for now)
+    Route::prefix('api/dataverse')->name('dataverse.')->middleware('throttle:60,1')->group(function () {
+        Route::get('campaigns/{campaignId}/email-engagement-logs', [EmailEngagementController::class, 'emailLogs'])
+            ->name('campaign.email-logs');
     });
 });
 

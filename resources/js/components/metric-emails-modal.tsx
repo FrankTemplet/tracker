@@ -1,4 +1,8 @@
-import { useMemo } from 'react';
+import { Mail, Download, ChevronRight } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import type { EmailCampaignMetric, MetricDrilldownKey } from '@/components/campaign-metrics';
+import { EmailRecipientsModal } from '@/components/email-recipients-modal';
+import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
@@ -6,9 +10,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Mail, Download } from 'lucide-react';
-import type { EmailCampaignMetric, MetricDrilldownKey } from '@/components/campaign-metrics';
-import { Button } from '@/components/ui/button';
 import { exportToExcel } from '@/lib/export-to-excel';
 
 interface MetricEmailsModalProps {
@@ -17,6 +18,9 @@ interface MetricEmailsModalProps {
     emails: EmailCampaignMetric[];
     metric: MetricDrilldownKey | null;
     title: string;
+    campaignId?: string;
+    /** Recipient engagement lives in Dataverse, which only holds Carib data for now. */
+    region?: string;
 }
 
 const METRIC_VALUE_LABEL: Record<MetricDrilldownKey, string> = {
@@ -86,7 +90,10 @@ export function MetricEmailsModal({
     emails,
     metric,
     title,
+    campaignId,
+    region,
 }: MetricEmailsModalProps) {
+    const [selectedEmail, setSelectedEmail] = useState<EmailCampaignMetric | null>(null);
     const filteredEmails = useMemo(() => {
         if (!metric) {
             return [];
@@ -97,8 +104,15 @@ export function MetricEmailsModal({
 
     const valueLabel = metric ? METRIC_VALUE_LABEL[metric] : '';
 
+    // Drilling into recipients is only wired for Carib deliveries so far
+    const canDrillIntoRecipients =
+        metric === 'delivered' && region?.toLowerCase() === 'carib' && !!campaignId;
+
     const handleDownload = () => {
-        if (!metric) return;
+        if (!metric) {
+return;
+}
+
         exportToExcel(
             filteredEmails.map((email) => ({
                 Subject: email.subject,
@@ -117,6 +131,7 @@ export function MetricEmailsModal({
                     <DialogTitle>{title}</DialogTitle>
                     <DialogDescription>
                         Sent emails from Email Campaign Metrics contributing to this total
+                        {canDrillIntoRecipients && ' · select an email to see its recipients'}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -147,9 +162,22 @@ export function MetricEmailsModal({
                                 </thead>
                                 <tbody className="divide-y">
                                     {filteredEmails.map((email) => (
-                                        <tr key={email.id} className="hover:bg-muted/20">
+                                        <tr
+                                            key={email.id}
+                                            onClick={canDrillIntoRecipients ? () => setSelectedEmail(email) : undefined}
+                                            className={
+                                                canDrillIntoRecipients
+                                                    ? 'hover:bg-muted/40 cursor-pointer'
+                                                    : 'hover:bg-muted/20'
+                                            }
+                                        >
                                             <td className="px-4 py-3 font-medium max-w-xs">
-                                                <span className="line-clamp-2">{email.subject}</span>
+                                                <span className="flex items-start gap-1.5">
+                                                    {canDrillIntoRecipients && (
+                                                        <ChevronRight className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+                                                    )}
+                                                    <span className="line-clamp-2">{email.subject}</span>
+                                                </span>
                                             </td>
                                             <td className="px-4 py-3 text-muted-foreground text-xs max-w-xs">
                                                 <span className="line-clamp-2">{email.name}</span>
@@ -182,7 +210,20 @@ export function MetricEmailsModal({
                         </p>
                     </div>
                 )}
+
+                <p className="text-[11px] leading-relaxed text-muted-foreground/80 border-t pt-3">
+                    * Note: Any discrepancy in unique opens may be due to data synchronization delays or
+                    Pardot tracking variations.
+                </p>
             </DialogContent>
+
+            <EmailRecipientsModal
+                open={selectedEmail !== null}
+                onOpenChange={(isOpen) => !isOpen && setSelectedEmail(null)}
+                campaignId={campaignId ?? ''}
+                emailName={selectedEmail?.name ?? null}
+                emailSubject={selectedEmail?.subject}
+            />
         </Dialog>
     );
 }
