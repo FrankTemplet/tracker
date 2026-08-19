@@ -13,7 +13,7 @@ jobs:
         with:
           host: ${{ secrets.AZURE_HOST }}
           username: ${{ secrets.AZURE_USER }}
-          key: ${{ secrets.AZURE_SSH_KEY }}
+          key: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
           script: |
             cd /var/www/webinars
             ./deploy.sh
