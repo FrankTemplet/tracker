@@ -3,14 +3,14 @@ set -e
 
 cd /var/www/tracker
 
-echo "Pulling latest code..."
+echo "Pulling latest code"
 git fetch origin main
 git reset --hard origin/main
 
-echo "Composer..."
+echo "Composer"
 composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
 
-echo "Building assets..."
+echo "Building assets"
 npm ci
 npm run build
 
