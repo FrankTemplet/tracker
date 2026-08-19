@@ -1,131 +1,19 @@
-name: Deploy to Azure
-
+name: Deploy to VPS
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
-
 jobs:
   deploy:
-    name: Deploy to Azure VM
+    name: Deploy to VPS
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          php-version: '8.4'
-          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv
-          coverage: none
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Install Composer dependencies
-        run: composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
-
-      - name: Install pnpm dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build assets
-        run: pnpm run build
-
-      - name: Create deployment archive
-        run: |
-          echo "📦 Creating deployment archive..."
-
-          tar --warning=no-file-changed -czf deploy.tar.gz \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='tests' \
-            --exclude='.env' \
-            --exclude='.env.example' \
-            --exclude='node_modules' \
-            --exclude='deploy.tar.gz' \
-            --exclude='storage' \
-            .
-
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.8.0
-        with:
-          ssh-private-key: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
-
-      - name: Upload deployment
-        run: |
-          echo "⬆️ Uploading application to Azure..."
-
-          scp -o StrictHostKeyChecking=no \
-            deploy.tar.gz \
-            frank@52.150.19.11:/tmp/tracker-deploy.tar.gz
-
-      - name: Deploy application
-        run: |
-          echo "🚀 Deploying to Azure VM..."
-
-          ssh -o StrictHostKeyChecking=no \
-            frank@52.150.19.11 << 'EOF'
-
-            set -e
-
-            APP_DIR="/var/www/tracker"
-
-            echo "📂 Application: $APP_DIR"
-
-            cd "$APP_DIR"
-
-            echo "📦 Extracting deployment..."
-
-            sudo tar -xzf /tmp/tracker-deploy.tar.gz -C "$APP_DIR"
-
-            rm -f /tmp/tracker-deploy.tar.gz
-
-            echo "🔧 Setting ownership..."
-
-            sudo chown -R www-data:www-data "$APP_DIR"
-
-            echo "🔐 Fixing Laravel permissions..."
-
-            sudo chmod -R 775 "$APP_DIR/storage"
-            sudo chmod -R 775 "$APP_DIR/bootstrap/cache"
-
-            echo "🗄️ Running migrations..."
-
-            sudo -u www-data php artisan migrate --force
-
-            echo "🧹 Clearing Laravel caches..."
-
-            sudo -u www-data php artisan optimize:clear
-
-            echo "⚡ Optimizing Laravel..."
-
-            sudo -u www-data php artisan config:cache
-            sudo -u www-data php artisan route:cache
-            sudo -u www-data php artisan view:cache
-
-            echo "🔄 Reloading PHP-FPM..."
-
-            sudo systemctl reload php8.4-fpm
-
-            echo "🔄 Reloading Nginx..."
-
-            sudo systemctl reload nginx
-
-            echo "✅ Deployment completed successfully!"
-
-          EOF
-
-      - name: Cleanup
-        if: always()
-        run: rm -f deploy.tar.gz
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /var/www/webinars
+            ./deploy.sh
