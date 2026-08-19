@@ -423,6 +423,8 @@ class PowerBiService
             $sqls = 0;
             $leads = [];
 
+            //TODO: Consider using PowerBiDataTransformer for this as well, but it may be overkill for now.
+
             foreach ($rows as $row) {
                 $createdBy = $row['(raw) Lead v2[Created By]'] ?? '';
                 $createdAlias = $row['(raw) Lead v2[Created Alias]'] ?? '';
