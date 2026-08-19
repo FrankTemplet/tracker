@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-cd /var/www/webinars
+cd /var/www/tracker
 
 echo "Pulling latest code..."
 git fetch origin main
