@@ -1,11 +1,11 @@
-name: Deploy to VPS
+name: Deploy to Azure
 on:
   push:
     branches:
       - main
 jobs:
   deploy:
-    name: Deploy to VPS
+    name: Deploy to Azure
     runs-on: ubuntu-latest
     steps:
       - name: Deploy over SSH
