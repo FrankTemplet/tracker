@@ -206,3 +206,33 @@ test('a missing configuration throws instead of returning data', function () {
 
     Http::assertNothingSent();
 });
+
+test('getEmailEngagementLogs can restrict results to delivered recipients', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'dv-token']),
+        'org9e047986.api.crm.dynamics.com/*' => Http::response(['value' => [fakeLogRow()]]),
+    ]);
+
+    (new DataverseService)->getEmailEngagementLogs('701Pl0', 'Send1', null, null, true);
+
+    Http::assertSent(function ($request) {
+        if (! str_contains($request->url(), 'cr21a_emailengagementlogs')) {
+            return false;
+        }
+
+        return str_contains(urldecode($request->url()), 'and cr21a_delivered eq 1');
+    });
+});
+
+test('getEmailEngagementLogs caches delivered-only pages separately', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'dv-token']),
+        'org9e047986.api.crm.dynamics.com/*' => Http::response(['value' => [fakeLogRow()]]),
+    ]);
+
+    $service = new DataverseService;
+    $service->getEmailEngagementLogs('701Pl0', 'Send1');
+    $service->getEmailEngagementLogs('701Pl0', 'Send1', null, null, true);
+
+    Http::assertSentCount(3); // token + two distinct log queries
+});

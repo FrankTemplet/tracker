@@ -223,6 +223,7 @@ return;
                 campaignId={campaignId ?? ''}
                 emailName={selectedEmail?.name ?? null}
                 emailSubject={selectedEmail?.subject}
+                deliveredOnly={metric === 'delivered'}
             />
         </Dialog>
     );

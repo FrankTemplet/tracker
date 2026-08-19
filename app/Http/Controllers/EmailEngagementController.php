@@ -37,6 +37,7 @@ class EmailEngagementController extends Controller
             'email_name' => ['required', 'string', 'max:255'],
             'cursor' => ['nullable', 'string', 'max:2000'],
             'page_size' => ['nullable', 'integer', 'min:1', 'max:5000'],
+            'delivered_only' => ['nullable', 'boolean'],
         ]);
 
         $campaignName = $this->campaignName($campaignId);
@@ -62,6 +63,7 @@ class EmailEngagementController extends Controller
                 $validated['email_name'],
                 $validated['cursor'] ?? null,
                 $validated['page_size'] ?? null,
+                (bool) ($validated['delivered_only'] ?? false),
             );
 
             return response()->json([

@@ -77,6 +77,7 @@ class DataverseService
      * campaign ID keeps sends that share a name across campaigns apart.
      *
      * @param  string|null  $cursor  Skip token returned as next_cursor by a previous call
+     * @param  bool  $deliveredOnly  Keep only recipients the send was delivered to
      * @return array{
      *     logs: array<int, array<string, mixed>>,
      *     next_cursor: string|null,
@@ -88,6 +89,7 @@ class DataverseService
         string $emailName,
         ?string $cursor = null,
         ?int $pageSize = null,
+        bool $deliveredOnly = false,
     ): array {
         $pageSize = $this->pageSize($pageSize);
 
@@ -95,16 +97,22 @@ class DataverseService
             throw new \Exception('Dataverse credentials are not configured.');
         }
 
-        $cacheKey = 'dataverse_email_logs_'.md5($campaignId.'|'.$emailName.'|'.$cursor.'|'.$pageSize);
+        $cacheKey = 'dataverse_email_logs_'.md5($campaignId.'|'.$emailName.'|'.$cursor.'|'.$pageSize.'|'.($deliveredOnly ? '1' : '0'));
 
-        return Cache::remember($cacheKey, $this->cacheTtl(), function () use ($campaignId, $emailName, $cursor, $pageSize) {
+        return Cache::remember($cacheKey, $this->cacheTtl(), function () use ($campaignId, $emailName, $cursor, $pageSize, $deliveredOnly) {
+            $filter = sprintf(
+                "cr21a_emailname eq '%s' and cr21a_campaignid eq '%s'",
+                $this->escape($emailName),
+                $this->escape($campaignId),
+            );
+
+            if ($deliveredOnly) {
+                $filter .= ' and cr21a_delivered eq 1';
+            }
+
             $response = $this->get('cr21a_emailengagementlogs', [
                 '$select' => implode(',', self::LOG_COLUMNS),
-                '$filter' => sprintf(
-                    "cr21a_emailname eq '%s' and cr21a_campaignid eq '%s'",
-                    $this->escape($emailName),
-                    $this->escape($campaignId),
-                ),
+                '$filter' => $filter,
                 '$orderby' => 'cr21a_datesent desc,cr21a_recipientemail asc',
                 '$count' => 'true',
             ], $cursor, $pageSize);
@@ -128,13 +136,13 @@ class DataverseService
      *
      * @return array<int, array<string, mixed>>
      */
-    public function getAllEmailEngagementLogs(string $campaignId, string $emailName, int $maxRows = 50000): array
+    public function getAllEmailEngagementLogs(string $campaignId, string $emailName, int $maxRows = 50000, bool $deliveredOnly = false): array
     {
         $logs = [];
         $cursor = null;
 
         do {
-            $page = $this->getEmailEngagementLogs($campaignId, $emailName, $cursor, 5000);
+            $page = $this->getEmailEngagementLogs($campaignId, $emailName, $cursor, 5000, $deliveredOnly);
             $logs = array_merge($logs, $page['logs']);
             $cursor = $page['next_cursor'];
         } while ($cursor !== null && count($logs) < $maxRows);

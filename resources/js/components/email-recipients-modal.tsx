@@ -38,6 +38,8 @@ interface EmailRecipientsModalProps {
     campaignId: string;
     emailName: string | null;
     emailSubject?: string;
+    /** Only fetch recipients the send was actually delivered to. */
+    deliveredOnly?: boolean;
 }
 
 interface LogsResponse {
@@ -90,6 +92,7 @@ export function EmailRecipientsModal({
     campaignId,
     emailName,
     emailSubject,
+    deliveredOnly = false,
 }: EmailRecipientsModalProps) {
     const { submit } = useHttp();
     const [logs, setLogs] = useState<EmailEngagementLog[]>([]);
@@ -110,12 +113,13 @@ export function EmailRecipientsModal({
                     query: {
                         email_name: emailName,
                         page_size: PAGE_SIZE,
+                        ...(deliveredOnly ? { delivered_only: 1 } : {}),
                         ...(nextCursor ? { cursor: nextCursor } : {}),
                     },
                 }),
             )) as LogsResponse;
         },
-        [campaignId, emailName, submit],
+        [campaignId, emailName, deliveredOnly, submit],
     );
 
     // First page whenever a different send is opened
