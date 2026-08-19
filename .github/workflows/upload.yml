@@ -15,5 +15,5 @@ jobs:
           username: ${{ secrets.AZURE_USER }}
           key: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
           script: |
-            cd /var/www/webinars
+            cd /var/www/tracker
             ./deploy.sh
