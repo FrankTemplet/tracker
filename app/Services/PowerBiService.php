@@ -454,7 +454,7 @@ class PowerBiService
                     'email' => $row['(raw) Lead v2[Email]'] ?? '',
                     'company' => $row['(raw) Lead v2[Company / Account]'] ?? '',
                     'created_date' => $row['(raw) Lead v2[Create Date]'] ?? '',
-                    'country' => $row['(raw) Lead v2[Country]'] ?? '',
+                    'country' => $row['(raw) Lead v2[Country Normalized]'] ?? '',
                     'lead_stage' => $stage,
                     'created_by' => $createdBy,
                     'created_alias' => $createdAlias,
@@ -478,18 +478,16 @@ class PowerBiService
      */
     private function buildLeadsCountryFilter(string $region): string
     {
-        $col = "'(raw) Lead v2'[Country]";
+        $col = "'(raw) Lead v2'[Country Normalized]";
 
         // Caribbean: sovereign island nations + dependent territories only
         // "Networks - *" and "Business - *" groupings go to LATAM
         $caribCountries = [
             // Sovereign nations
             'Jamaica', 'Barbados', 'Bahamas', 'Antigua and Barbuda', 'Antigua',
-            'Dominica', 'Dominican Republic', 'Republica Dominicana', 'República Dominicana',
-            'Grenada', 'St. Lucia', 'St. Kitts', 'St. Kitts & Nevis',
+            'Dominica', 'Grenada', 'St. Lucia', 'St. Kitts', 'St. Kitts & Nevis',
             'St. Vincent', 'St. Vincent & Grenadines', 'St. Vincent and the Grenadines', 'St. Vincent & the Grenadines',
             'Trinidad', 'Trinidad and Tobago', 'Trinidad & Tobago', 'trinidad-and-tobago',
-            'Cuba', 'Haiti',
             // Territories
             'Anguilla', 'British Virgin Islands', 'British Virgin Isalnds', 'british-virgin-islands',
             'Cayman', 'Montserrat', 'Turks & Caicos', 'Turks and Caicos',
@@ -506,6 +504,7 @@ class PowerBiService
         $latamCountries = [
             // Mexico
             'Mexico',
+            'Dominican Republic', 'Dominican Republic', 'República Dominicana', 'Republica Dominicana', 'república-dominicana',
             // Central America
             'Guatemala', 'El Salvador', 'Honduras', 'Nicaragua', 'Costa Rica', 'Panama', 'Panamá', 'Belize',
             // South America
