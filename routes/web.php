@@ -30,6 +30,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('campaigns', [PowerBiController::class, 'campaigns'])->name('campaigns');
         Route::get('campaigns/{campaignId}/metrics', [PowerBiController::class, 'campaignMetrics'])->name('campaign.metrics');
         Route::get('campaigns/{campaignId}/members/{status}', [PowerBiController::class, 'campaignMembers'])->name('campaign.members');
+        Route::get('leads/{leadId}/history', [PowerBiController::class, 'leadHistory'])->name('lead.history');
         Route::get('embed-token/{reportId}', [PowerBiController::class, 'embedToken'])->name('embed.token');
     });
 

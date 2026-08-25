@@ -291,6 +291,61 @@ class PowerBiController extends Controller
     /**
      * Get embed token for a specific Power BI report.
      */
+    /**
+     * Return the aging metrics and owner-reassignment timeline for a single lead.
+     *
+     * Served from the same cached history payload the leads page already uses,
+     * so opening a lead costs no extra Power BI round trip.
+     */
+    public function leadHistory(Request $request, string $leadId): JsonResponse
+    {
+        // Salesforce IDs are alphanumeric; reject anything else before it reaches DAX.
+        if (! preg_match('/^[A-Za-z0-9]{15,18}$/', $leadId)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid lead ID.',
+            ], 400);
+        }
+
+        try {
+            $region = $request->user()->region === 'carib' ? 'carib' : 'latam';
+            $leads = $this->powerBiService->getLeadsData($region)['leads'];
+
+            $normalized = PowerBiDataTransformer::normalizeLeadId($leadId);
+            $match = null;
+
+            foreach ($leads as $lead) {
+                if (PowerBiDataTransformer::normalizeLeadId($lead['lead_id'] ?? '') === $normalized) {
+                    $match = $lead;
+                    break;
+                }
+            }
+
+            // A lead outside the caller's region is not theirs to look at.
+            if ($match === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You are not authorized to view this lead.',
+                ], 403);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $this->powerBiService->getLeadHistoryDetail($leadId, $match['created_date'] ?? ''),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch lead history', [
+                'lead_id' => $leadId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch lead history. Please try again later.',
+            ], 500);
+        }
+    }
+
     public function embedToken(string $reportId): JsonResponse
     {
         try {

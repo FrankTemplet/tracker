@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
-import { TrendingUp, BarChart3, Target, ChevronLeft, ChevronRight, Filter, User, Clock, ArrowRightLeft, Tag, Activity } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { TrendingUp, BarChart3, Target, ChevronLeft, ChevronRight, Filter, User, Clock, ArrowRightLeft, Tag, Activity, Hourglass } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { LucideIcon } from 'lucide-react';
+import { formatDuration, agingSeverity, AGING_TEXT_CLASS, AGING_BADGE_CLASS } from '@/lib/format-duration';
 
 export interface LeadSummaryLatam {
     leads_assigned: number;
@@ -16,7 +17,32 @@ export interface LeadSummaryCarib extends LeadSummaryLatam {
     leads_created: number;
 }
 
+export interface LeadAging {
+    created_at: string | null;
+    first_touch_at: string | null;
+    first_touch_by: string | null;
+    first_touch_to: string | null;
+    age_hours: number | null;
+    time_to_first_touch_hours: number | null;
+    idle_hours: number | null;
+    untouched: boolean;
+    event_count: number;
+    /** 'date' means Create Date carries no wall time, so durations from it are +/- a day. */
+    created_precision: string;
+}
+
+export interface LeadHistoryEvent {
+    at: string | null;
+    at_display: string;
+    field: string;
+    old_value: string;
+    new_value: string;
+    edited_by: string;
+    delta_hours: number | null;
+}
+
 export interface Lead {
+    lead_id: string;
     name: string;
     owner: string;
     email: string;
@@ -26,6 +52,8 @@ export interface Lead {
     lead_stage: string;
     created_by: string;
     created_alias: string;
+    lead_source: string;
+    lead_status: string;
 }
 
 export interface LeadsDashboardPageProps {
@@ -141,7 +169,213 @@ const CARD_LABELS: Record<CardKey, string> = {
 // Lead detail modal
 // ---------------------------------------------------------------------------
 
+/**
+ * Load a lead's owner-reassignment timeline.
+ *
+ * The backend serves this from the same cached history payload the page already
+ * uses, so this is a cheap call, but it stays out of the Inertia props because
+ * shipping every history row for every lead would bloat the page payload.
+ */
+function useLeadHistory(leadId: string | null, enabled: boolean) {
+    // The fetched leadId is kept alongside the result so that switching leads
+    // reads as "loading" without having to reset state from inside the effect.
+    const [result, setResult] = useState<{ leadId: string; aging: LeadAging | null; events: LeadHistoryEvent[]; error: boolean } | null>(null);
+
+    useEffect(() => {
+        if (!enabled || !leadId) {
+            return;
+        }
+
+        let cancelled = false;
+
+        fetch(`/api/powerbi/leads/${encodeURIComponent(leadId)}/history`, {
+            headers: { Accept: 'application/json' },
+        })
+            .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+            .then(body => {
+                if (cancelled) {
+                    return;
+                }
+
+                setResult({
+                    leadId,
+                    aging: body.success ? (body.data.aging as LeadAging | null) : null,
+                    events: body.success ? (body.data.events as LeadHistoryEvent[]) : [],
+                    error: !body.success,
+                });
+            })
+            .catch(() => {
+                if (cancelled) {
+                    return;
+                }
+
+                setResult({ leadId, aging: null, events: [], error: true });
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [leadId, enabled]);
+
+    const ready = result !== null && result.leadId === leadId;
+
+    return {
+        aging: ready ? result.aging : null,
+        events: ready ? result.events : null,
+        loading: enabled && !!leadId && !ready,
+        error: ready ? result.error : false,
+    };
+}
+
+/** One labelled duration inside the Aging block. */
+function AgingMetric({ label, hours, hint, muted }: { label: string; hours: number | null; hint?: string; muted?: boolean }) {
+    const severity = agingSeverity(hours);
+
+    return (
+        <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</p>
+            <p className={`text-lg font-bold ${muted ? 'text-muted-foreground' : AGING_TEXT_CLASS[severity]}`}>
+                {formatDuration(hours)}
+            </p>
+            {hint && <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>}
+        </div>
+    );
+}
+
+/** Aging summary: how old the lead is and how long it went unattended. */
+function LeadAgingSection({ aging, loading, error }: { aging: LeadAging | null; loading: boolean; error: boolean }) {
+    if (loading || error || !aging) {
+        const message = loading ? 'Loading aging…' : error ? 'Could not load aging' : 'No create date on this lead';
+
+        return (
+            <div>
+                <div className="flex items-center gap-2 mb-3">
+                    <Hourglass className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Aging</h3>
+                </div>
+                <div className="rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground italic">
+                    {message}
+                </div>
+            </div>
+        );
+    }
+
+    const untouchedSeverity = agingSeverity(aging.age_hours);
+
+    return (
+        <div>
+            <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                    <Hourglass className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Aging</h3>
+                </div>
+                {aging.untouched && (
+                    <span className={`shrink-0 inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${AGING_BADGE_CLASS[untouchedSeverity]}`}>
+                        Never touched
+                    </span>
+                )}
+            </div>
+
+            <div className="rounded-lg border bg-muted/30 px-4 py-3 grid grid-cols-3 gap-4">
+                <AgingMetric label="Lead age" hours={aging.age_hours} muted />
+                {aging.untouched ? (
+                    <AgingMetric label="Unattended for" hours={aging.age_hours} hint="No owner change yet" />
+                ) : (
+                    <AgingMetric
+                        label="To first touch"
+                        hours={aging.time_to_first_touch_hours}
+                        hint={aging.first_touch_to ? `→ ${aging.first_touch_to}` : undefined}
+                    />
+                )}
+                <AgingMetric label="Since last move" hours={aging.idle_hours} muted />
+            </div>
+
+            {aging.created_precision === 'date' && (
+                <p className="text-xs text-muted-foreground mt-2">
+                    Create Date has no time of day, so durations measured from it are accurate to within a day.
+                </p>
+            )}
+        </div>
+    );
+}
+
+/**
+ * Everyone who held the lead before its current owner, oldest first.
+ *
+ * Derived from the handoff chain: each event's Old Value is who held the lead
+ * until that moment, so the distinct Old Values are the previous owners.
+ */
+function PreviousOwners({ events, loading, error, currentOwner }: { events: LeadHistoryEvent[] | null; loading: boolean; error: boolean; currentOwner: string }) {
+    if (loading) {
+        return <div className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground italic">Loading history…</div>;
+    }
+
+    if (error) {
+        return <div className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground italic">Could not load history</div>;
+    }
+
+    const owners: string[] = [];
+
+    for (const event of events ?? []) {
+        const owner = event.old_value?.trim();
+
+        if (owner && owner !== currentOwner && !owners.includes(owner)) {
+            owners.push(owner);
+        }
+    }
+
+    if (owners.length === 0) {
+        return <div className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground italic">No previous owners</div>;
+    }
+
+    return (
+        <div className="flex flex-wrap gap-2">
+            {owners.map(owner => (
+                <span key={owner} className="inline-flex items-center rounded-full border bg-muted/30 px-3 py-1 text-sm font-medium">
+                    {owner}
+                </span>
+            ))}
+        </div>
+    );
+}
+
+/** Chronological list of owner handoffs. */
+function ReassignmentTimeline({ events, loading, error }: { events: LeadHistoryEvent[] | null; loading: boolean; error: boolean }) {
+    if (loading) {
+        return <div className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground italic">Loading history…</div>;
+    }
+
+    if (error) {
+        return <div className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground italic">Could not load history</div>;
+    }
+
+    if (!events || events.length === 0) {
+        return <div className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground italic">No reassignments recorded</div>;
+    }
+
+    return (
+        <ol className="flex flex-col gap-2">
+            {events.map((event, i) => (
+                <li key={i} className="rounded-lg border px-4 py-3 text-sm">
+                    <div className="flex items-baseline justify-between gap-3">
+                        <p className="font-medium">
+                            {event.old_value || '—'} <span className="text-muted-foreground">→</span> {event.new_value || '—'}
+                        </p>
+                        <span className="shrink-0 text-xs text-muted-foreground">{event.at_display || '—'}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        by {event.edited_by || '—'}
+                        {event.delta_hours !== null && <> · {formatDuration(event.delta_hours)} after the previous move</>}
+                    </p>
+                </li>
+            ))}
+        </ol>
+    );
+}
+
 function LeadDetailModal({ lead, open, onClose }: { lead: Lead | null; open: boolean; onClose: () => void }) {
+    const { aging, events, loading, error } = useLeadHistory(lead?.lead_id ?? null, open && !!lead);
+
     if (!lead) return null;
 
     const stageColors: Record<string, string> = {
@@ -189,6 +423,9 @@ function LeadDetailModal({ lead, open, onClose }: { lead: Lead | null; open: boo
                         </div>
                     </div>
 
+                    {/* Aging */}
+                    <LeadAgingSection aging={aging} loading={loading} error={error} />
+
                     {/* Current owner */}
                     <div>
                         <div className="flex items-center gap-2 mb-3">
@@ -206,9 +443,13 @@ function LeadDetailModal({ lead, open, onClose }: { lead: Lead | null; open: boo
                             <Tag className="h-4 w-4 text-muted-foreground" />
                             <h3 className="text-sm font-semibold">Lead Source</h3>
                         </div>
-                        <div className="rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground italic">
-                            No data available yet
-                        </div>
+                        {lead.lead_source ? (
+                            <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm font-medium">{lead.lead_source}</div>
+                        ) : (
+                            <div className="rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground italic">
+                                No lead source recorded
+                            </div>
+                        )}
                     </div>
 
                     {/* Lead Status */}
@@ -217,9 +458,13 @@ function LeadDetailModal({ lead, open, onClose }: { lead: Lead | null; open: boo
                             <Activity className="h-4 w-4 text-muted-foreground" />
                             <h3 className="text-sm font-semibold">Lead Status</h3>
                         </div>
-                        <div className="rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground italic">
-                            No data available yet
-                        </div>
+                        {lead.lead_status ? (
+                            <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm font-medium">{lead.lead_status}</div>
+                        ) : (
+                            <div className="rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground italic">
+                                No lead status recorded
+                            </div>
+                        )}
                     </div>
 
                     {/* Previous owners */}
@@ -228,9 +473,7 @@ function LeadDetailModal({ lead, open, onClose }: { lead: Lead | null; open: boo
                             <Clock className="h-4 w-4 text-muted-foreground" />
                             <h3 className="text-sm font-semibold">Previous Owners</h3>
                         </div>
-                        <div className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground italic">
-                            No data available yet
-                        </div>
+                        <PreviousOwners events={events} loading={loading} error={error} currentOwner={lead.owner} />
                     </div>
 
                     {/* Reassignment history */}
@@ -239,9 +482,7 @@ function LeadDetailModal({ lead, open, onClose }: { lead: Lead | null; open: boo
                             <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
                             <h3 className="text-sm font-semibold">Reassignment History</h3>
                         </div>
-                        <div className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground italic">
-                            No data available yet
-                        </div>
+                        <ReassignmentTimeline events={events} loading={loading} error={error} />
                     </div>
                 </div>
             </DialogContent>

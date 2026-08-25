@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use Carbon\CarbonImmutable;
+
 class PowerBiDataTransformer
 {
     /**
@@ -287,5 +289,181 @@ class PowerBiDataTransformer
         $memberId = $engagement['(raw) Engagement[Member ID]'] ?? '';
 
         return hash('sha256', $campaignId.$memberId);
+    }
+
+    /**
+     * Normalize a Salesforce Lead ID for joining across tables.
+     *
+     * '(raw) Lead v2'[Lead ID] holds 18-character IDs while
+     * '(raw) Lead History'[Lead ID] holds the 15-character form. The 18-char ID
+     * is the 15-char ID plus a 3-character checksum suffix, so truncating is a
+     * safe, lossless way to join the two tables.
+     */
+    public static function normalizeLeadId(string $leadId): string
+    {
+        return self::normalizeSalesforceId($leadId);
+    }
+
+    /**
+     * Normalize any Salesforce record ID to its 15-character form.
+     *
+     * Salesforce hands out the same record ID in two shapes: 15 characters
+     * (case-sensitive) and 18 characters (the same 15 plus a 3-character
+     * checksum suffix). Comparing the two forms directly never matches, so
+     * every cross-table comparison must run both sides through here first.
+     */
+    public static function normalizeSalesforceId(string $recordId): string
+    {
+        return substr(trim($recordId), 0, 15);
+    }
+
+    /**
+     * Parse a Power BI date string into a Carbon instance.
+     *
+     * The lead tables return dates as US-formatted strings, in two shapes:
+     *   - date only            e.g. "5/6/2025"           ('(raw) Lead v2'[Create Date])
+     *   - date with wall time  e.g. "5/6/2025 9:04:00 AM" ('(raw) Lead History'[Edit Date])
+     *
+     * A date-only value resolves to midnight of that day.
+     */
+    public static function parseLeadDate(?string $value): ?CarbonImmutable
+    {
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        foreach (['n/j/Y g:i:s A', 'n/j/Y G:i:s', 'n/j/Y'] as $format) {
+            try {
+                $parsed = CarbonImmutable::createFromFormat($format, $value);
+            } catch (\Exception) {
+                continue;
+            }
+
+            if ($parsed !== false) {
+                return $format === 'n/j/Y' ? $parsed->startOfDay() : $parsed;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Turn raw '(raw) Lead History' rows into a chronological event timeline.
+     *
+     * Every row in the table is an owner reassignment ('Field / Event' only ever
+     * holds "Lead Owner"), so each event is a handoff from Old Value to New Value.
+     * `delta_hours` is the gap since the previous event, null on the first one.
+     *
+     * @param  array<int, array>  $rows  Normalized history rows (edit_date, field, old_value, new_value, edited_by)
+     * @return array<int, array{at: ?string, at_display: string, field: string, old_value: string, new_value: string, edited_by: string, delta_hours: ?float}>
+     */
+    public static function buildLeadHistoryTimeline(array $rows): array
+    {
+        $events = [];
+
+        foreach ($rows as $row) {
+            $rawEditDate = $row['edit_date'] ?? '';
+            $at = self::parseLeadDate($rawEditDate);
+
+            $events[] = [
+                'at' => $at?->toIso8601String(),
+                'at_display' => (string) $rawEditDate,
+                'sort_key' => $at?->getTimestamp() ?? PHP_INT_MAX,
+                'field' => $row['field'] ?? '',
+                'old_value' => $row['old_value'] ?? '',
+                'new_value' => $row['new_value'] ?? '',
+                'edited_by' => $row['edited_by'] ?? '',
+            ];
+        }
+
+        // Rows with unparseable dates sort last rather than corrupting the order.
+        usort($events, fn ($a, $b) => $a['sort_key'] <=> $b['sort_key']);
+
+        $previous = null;
+
+        foreach ($events as $index => $event) {
+            $current = $event['sort_key'] === PHP_INT_MAX ? null : $event['sort_key'];
+
+            $events[$index]['delta_hours'] = ($previous !== null && $current !== null)
+                ? round(($current - $previous) / 3600, 2)
+                : null;
+
+            unset($events[$index]['sort_key']);
+
+            if ($current !== null) {
+                $previous = $current;
+            }
+        }
+
+        return $events;
+    }
+
+    /**
+     * Compute aging metrics for a single lead.
+     *
+     * - Age is measured from the lead's creation date to now.
+     * - First touch is the earliest history event strictly after creation, i.e.
+     *   the first time somebody moved the lead off its original owner.
+     *
+     * Note on precision: '(raw) Lead v2'[Create Date] carries no wall time, so
+     * creation resolves to midnight and any duration measured from it can run up
+     * to 24h long. `created_precision` reports this so the UI can hedge its
+     * wording. History events do carry a time, so gaps between events are exact.
+     *
+     * @param  string  $createdDate  Raw '(raw) Lead v2'[Create Date] value
+     * @param  array<int, array>  $historyRows  Raw history rows for this lead
+     * @return array{created_at: ?string, first_touch_at: ?string, first_touch_by: ?string, first_touch_to: ?string, age_hours: ?float, time_to_first_touch_hours: ?float, idle_hours: ?float, untouched: bool, event_count: int, created_precision: string}|null
+     */
+    public static function buildLeadAging(string $createdDate, array $historyRows, ?CarbonImmutable $now = null): ?array
+    {
+        $now ??= CarbonImmutable::now();
+        $createdAt = self::parseLeadDate($createdDate);
+
+        if ($createdAt === null) {
+            return null;
+        }
+
+        $timeline = self::buildLeadHistoryTimeline($historyRows);
+
+        $firstTouch = null;
+        $lastTouchAt = null;
+
+        foreach ($timeline as $event) {
+            if ($event['at'] === null) {
+                continue;
+            }
+
+            $at = CarbonImmutable::parse($event['at']);
+
+            // Events at or before creation are not a "touch" — with a date-only
+            // creation stamp, a same-day event is indistinguishable from the
+            // lead's own creation, so it is only counted once it is strictly later.
+            if ($firstTouch === null && $at->greaterThan($createdAt)) {
+                $firstTouch = ['at' => $at, 'event' => $event];
+            }
+
+            if ($lastTouchAt === null || $at->greaterThan($lastTouchAt)) {
+                $lastTouchAt = $at;
+            }
+        }
+
+        $idleFrom = $lastTouchAt ?? $createdAt;
+
+        return [
+            'created_at' => $createdAt->toIso8601String(),
+            'first_touch_at' => $firstTouch ? $firstTouch['at']->toIso8601String() : null,
+            'first_touch_by' => $firstTouch ? ($firstTouch['event']['edited_by'] ?: null) : null,
+            'first_touch_to' => $firstTouch ? ($firstTouch['event']['new_value'] ?: null) : null,
+            'age_hours' => round(max(0, $now->getTimestamp() - $createdAt->getTimestamp()) / 3600, 2),
+            'time_to_first_touch_hours' => $firstTouch
+                ? round(max(0, $firstTouch['at']->getTimestamp() - $createdAt->getTimestamp()) / 3600, 2)
+                : null,
+            'idle_hours' => round(max(0, $now->getTimestamp() - $idleFrom->getTimestamp()) / 3600, 2),
+            'untouched' => $firstTouch === null,
+            'event_count' => count($timeline),
+            'created_precision' => 'date',
+        ];
     }
 }

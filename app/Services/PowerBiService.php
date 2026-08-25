@@ -293,10 +293,16 @@ class PowerBiService
         $token = $this->getAccessToken();
         $url = $this->buildExecuteQueriesUrl();
 
+        // Both sides of the comparison must be the same length. The IDs that
+        // reach this method come from '(raw) Engagement'[Campaign ID] in their
+        // 18-character form, while the DAX side is truncated to 15, so the
+        // filter never matched until the incoming ID is truncated too.
+        $campaignKey = PowerBiDataTransformer::normalizeSalesforceId($campaignId);
+
         $body = [
             'queries' => [
                 [
-                    'query' => "EVALUATE FILTER('(raw) Email Campaign Metrics', LEFT('(raw) Email Campaign Metrics'[Campaign ID], 15) = \"$campaignId\")",
+                    'query' => "EVALUATE FILTER('(raw) Email Campaign Metrics', LEFT('(raw) Email Campaign Metrics'[Campaign ID], 15) = \"$campaignKey\")",
                 ],
             ],
             'serializerSettings' => [
@@ -423,7 +429,7 @@ class PowerBiService
             $sqls = 0;
             $leads = [];
 
-            //TODO: Consider using PowerBiDataTransformer for this as well, but it may be overkill for now.
+            // TODO: Consider using PowerBiDataTransformer for this as well, but it may be overkill for now.
 
             foreach ($rows as $row) {
                 $createdBy = $row['(raw) Lead v2[Created By]'] ?? '';
@@ -451,6 +457,7 @@ class PowerBiService
                 $name = trim("$firstName $lastName") ?: ($row['(raw) Lead v2[Company / Account]'] ?? '');
 
                 $leads[] = [
+                    'lead_id' => $row['(raw) Lead v2[Lead ID]'] ?? '',
                     'name' => $name,
                     'owner' => $row['(raw) Lead v2[Lead Owner]'] ?? '',
                     'email' => $row['(raw) Lead v2[Email]'] ?? '',
@@ -460,6 +467,8 @@ class PowerBiService
                     'lead_stage' => $stage,
                     'created_by' => $createdBy,
                     'created_alias' => $createdAlias,
+                    'lead_source' => $row['(raw) Lead v2[Lead Source]'] ?? '',
+                    'lead_status' => $row['(raw) Lead v2[Lead Status]'] ?? '',
                 ];
             }
 
@@ -473,6 +482,95 @@ class PowerBiService
                 'leads' => $leads,
             ];
         });
+    }
+
+    /**
+     * Get all '(raw) Lead History' rows, grouped by 15-character Lead ID.
+     *
+     * The whole table is ~14k rows, so it is fetched once and cached rather than
+     * queried per lead. Both the aging metrics attached to getLeadsData() and the
+     * per-lead timeline endpoint read from this single cached payload, so opening
+     * a lead never costs an extra Power BI round trip.
+     *
+     * @return array<string, array<int, array>>
+     */
+    public function getLeadHistoryRows(): array
+    {
+        return Cache::remember('powerbi_lead_history_rows', $this->cacheTtl(), function () {
+            $token = $this->getAccessToken();
+            $url = $this->buildExecuteQueriesUrl();
+
+            // Only the columns the timeline needs — the table has 17.
+            // Power BI returns SELECTCOLUMNS aliases wrapped in brackets, so
+            // "lead_id" comes back on the response as the key "[lead_id]".
+            $dax = <<<'DAX'
+                EVALUATE
+                SELECTCOLUMNS(
+                    '(raw) Lead History',
+                    "lead_id", '(raw) Lead History'[Lead ID],
+                    "edit_date", '(raw) Lead History'[Edit Date],
+                    "field", '(raw) Lead History'[Field / Event],
+                    "old_value", '(raw) Lead History'[Old Value],
+                    "new_value", '(raw) Lead History'[New Value],
+                    "edited_by", '(raw) Lead History'[Edited By]
+                )
+                DAX;
+
+            $response = Http::withToken($token)->post($url, [
+                'queries' => [['query' => $dax]],
+                'serializerSettings' => ['includeNulls' => true],
+            ]);
+
+            if ($response->failed()) {
+                Log::error('Failed to fetch lead history from Power BI', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+                throw new \Exception('Failed to fetch lead history: '.$response->status());
+            }
+
+            $grouped = [];
+
+            foreach ($this->parsePowerBiResponse($response->json()) as $row) {
+                $leadId = PowerBiDataTransformer::normalizeLeadId($row['[lead_id]'] ?? '');
+
+                if ($leadId === '') {
+                    continue;
+                }
+
+                $grouped[$leadId][] = [
+                    'edit_date' => $row['[edit_date]'] ?? '',
+                    'field' => $row['[field]'] ?? '',
+                    'old_value' => $row['[old_value]'] ?? '',
+                    'new_value' => $row['[new_value]'] ?? '',
+                    'edited_by' => $row['[edited_by]'] ?? '',
+                ];
+            }
+
+            return $grouped;
+        });
+    }
+
+    /**
+     * Get the aging metrics and owner-reassignment timeline for a single lead.
+     *
+     * Aging is computed here rather than attached to every lead on the leads page:
+     * it is only ever shown in the lead detail modal, and carrying it for all
+     * ~3k leads more than doubled the Inertia payload. Both this and the leads
+     * page read the same cached history, so this costs no extra Power BI query.
+     *
+     * @param  string  $createdDate  Raw '(raw) Lead v2'[Create Date] for this lead
+     * @return array{aging: ?array, events: array<int, array>}
+     */
+    public function getLeadHistoryDetail(string $leadId, string $createdDate): array
+    {
+        $history = $this->getLeadHistoryRows();
+        $rows = $history[PowerBiDataTransformer::normalizeLeadId($leadId)] ?? [];
+
+        return [
+            'aging' => PowerBiDataTransformer::buildLeadAging($createdDate, $rows),
+            'events' => PowerBiDataTransformer::buildLeadHistoryTimeline($rows),
+        ];
     }
 
     /**

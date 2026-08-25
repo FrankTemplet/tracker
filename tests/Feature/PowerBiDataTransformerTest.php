@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\PowerBiDataTransformer;
+use Carbon\CarbonImmutable;
 
 test('transformCampaigns formats unique campaign data correctly', function () {
     $uniqueCampaigns = [
@@ -243,4 +244,128 @@ test('stableEngagementId generates consistent hash', function () {
 
     expect($id1)->toBe($id2)
         ->and($id1)->toHaveLength(64); // SHA-256 produces 64 character hex string
+});
+
+// ---------------------------------------------------------------------------
+// Lead aging
+// ---------------------------------------------------------------------------
+
+/**
+ * Build history rows in the normalized shape PowerBiService::getLeadHistoryRows()
+ * produces (every row in '(raw) Lead History' is a Lead Owner reassignment).
+ */
+function historyRows(array $editDates): array
+{
+    return array_map(fn ($editDate) => [
+        'edit_date' => $editDate,
+        'field' => 'Lead Owner',
+        'old_value' => 'Sales Outcomes Lead Triage',
+        'new_value' => 'Tracey Mullings',
+        'edited_by' => 'Sales Outcomes Lead Triage',
+    ], $editDates);
+}
+
+test('normalizeLeadId truncates 18-character Salesforce IDs to the 15-character form', function () {
+    // '(raw) Lead v2' stores 18-char IDs, '(raw) Lead History' stores 15-char.
+    expect(PowerBiDataTransformer::normalizeLeadId('00QPl00001AnpWAMAZ'))->toBe('00QPl00001AnpWA')
+        ->and(PowerBiDataTransformer::normalizeLeadId('00QPl00000YlDUT'))->toBe('00QPl00000YlDUT')
+        ->and(PowerBiDataTransformer::normalizeLeadId('  00QPl00000YlDUT  '))->toBe('00QPl00000YlDUT')
+        ->and(PowerBiDataTransformer::normalizeLeadId(''))->toBe('');
+});
+
+test('parseLeadDate handles both date-only and date-with-time values', function () {
+    expect(PowerBiDataTransformer::parseLeadDate('5/6/2025')->toIso8601String())->toBe('2025-05-06T00:00:00+00:00')
+        ->and(PowerBiDataTransformer::parseLeadDate('5/6/2025 9:04:00 AM')->toIso8601String())->toBe('2025-05-06T09:04:00+00:00')
+        ->and(PowerBiDataTransformer::parseLeadDate('5/6/2025 2:11:00 PM')->toIso8601String())->toBe('2025-05-06T14:11:00+00:00')
+        ->and(PowerBiDataTransformer::parseLeadDate('not a date'))->toBeNull()
+        ->and(PowerBiDataTransformer::parseLeadDate(''))->toBeNull()
+        ->and(PowerBiDataTransformer::parseLeadDate(null))->toBeNull();
+});
+
+test('buildLeadAging measures time to first touch from the creation date', function () {
+    $now = CarbonImmutable::create(2025, 5, 20, 12, 0, 0);
+
+    $aging = PowerBiDataTransformer::buildLeadAging('5/6/2025', historyRows(['5/6/2025 9:04:00 AM']), $now);
+
+    // Created at midnight 5/6, touched at 09:04 the same day.
+    expect($aging['untouched'])->toBeFalse()
+        ->and($aging['time_to_first_touch_hours'])->toBe(9.07)
+        ->and($aging['first_touch_at'])->toBe('2025-05-06T09:04:00+00:00')
+        ->and($aging['first_touch_to'])->toBe('Tracey Mullings')
+        ->and($aging['age_hours'])->toBe(348.0)
+        ->and($aging['event_count'])->toBe(1);
+});
+
+test('buildLeadAging flags a lead with no history as untouched', function () {
+    $now = CarbonImmutable::create(2025, 5, 20, 12, 0, 0);
+
+    $aging = PowerBiDataTransformer::buildLeadAging('5/6/2025', [], $now);
+
+    // With nothing to go on, idle time falls back to the full age of the lead.
+    expect($aging['untouched'])->toBeTrue()
+        ->and($aging['time_to_first_touch_hours'])->toBeNull()
+        ->and($aging['first_touch_at'])->toBeNull()
+        ->and($aging['age_hours'])->toBe(348.0)
+        ->and($aging['idle_hours'])->toBe(348.0)
+        ->and($aging['event_count'])->toBe(0);
+});
+
+test('buildLeadAging ignores events at or before the creation date', function () {
+    $now = CarbonImmutable::create(2025, 5, 20, 12, 0, 0);
+
+    // Creation resolves to midnight, so an event stamped exactly at midnight is
+    // indistinguishable from the lead's own creation and is not a touch.
+    $aging = PowerBiDataTransformer::buildLeadAging('5/6/2025', historyRows(['5/6/2025 12:00:00 AM']), $now);
+
+    expect($aging['untouched'])->toBeTrue()
+        ->and($aging['time_to_first_touch_hours'])->toBeNull()
+        ->and($aging['event_count'])->toBe(1);
+});
+
+test('buildLeadAging returns null when the creation date cannot be parsed', function () {
+    $now = CarbonImmutable::create(2025, 5, 20, 12, 0, 0);
+
+    expect(PowerBiDataTransformer::buildLeadAging('', historyRows(['5/6/2025 9:04:00 AM']), $now))->toBeNull()
+        ->and(PowerBiDataTransformer::buildLeadAging('garbage', [], $now))->toBeNull();
+});
+
+test('buildLeadAging measures idle time from the most recent event', function () {
+    $now = CarbonImmutable::create(2025, 5, 20, 12, 0, 0);
+
+    $aging = PowerBiDataTransformer::buildLeadAging(
+        '5/6/2025',
+        historyRows(['5/8/2025 2:11:00 PM', '5/6/2025 9:04:00 AM']),
+        $now,
+    );
+
+    // First touch comes from the earliest event, idle time from the latest.
+    expect($aging['time_to_first_touch_hours'])->toBe(9.07)
+        ->and($aging['idle_hours'])->toBe(285.82)
+        ->and($aging['event_count'])->toBe(2);
+});
+
+test('buildLeadHistoryTimeline sorts events and measures the gap between them', function () {
+    $timeline = PowerBiDataTransformer::buildLeadHistoryTimeline(
+        historyRows(['5/8/2025 2:11:00 PM', '5/6/2025 9:04:00 AM']),
+    );
+
+    expect($timeline)->toHaveCount(2)
+        ->and($timeline[0]['at'])->toBe('2025-05-06T09:04:00+00:00')
+        ->and($timeline[0]['delta_hours'])->toBeNull()
+        ->and($timeline[1]['at'])->toBe('2025-05-08T14:11:00+00:00')
+        ->and($timeline[1]['delta_hours'])->toBe(53.12);
+});
+
+test('buildLeadHistoryTimeline sorts unparseable dates last without breaking the order', function () {
+    $timeline = PowerBiDataTransformer::buildLeadHistoryTimeline(
+        historyRows(['bogus', '5/8/2025 2:11:00 PM', '5/6/2025 9:04:00 AM']),
+    );
+
+    // The bad row still surfaces in the UI, it just cannot carry a delta.
+    expect($timeline)->toHaveCount(3)
+        ->and($timeline[0]['at'])->toBe('2025-05-06T09:04:00+00:00')
+        ->and($timeline[1]['at'])->toBe('2025-05-08T14:11:00+00:00')
+        ->and($timeline[2]['at'])->toBeNull()
+        ->and($timeline[2]['at_display'])->toBe('bogus')
+        ->and($timeline[2]['delta_hours'])->toBeNull();
 });

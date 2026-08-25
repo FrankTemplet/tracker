@@ -324,3 +324,37 @@ test('getCampaignMetrics returns null when campaign has no metrics', function ()
 
     expect($metrics)->toBeNull();
 });
+
+test('getCampaignMetrics filters Email Campaign Metrics with the 15-character campaign ID', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'fake-token']),
+        'api.powerbi.com/*' => Http::response([
+            'results' => [
+                [
+                    'tables' => [
+                        [
+                            'rows' => [],
+                        ],
+                    ],
+                ],
+            ],
+        ]),
+    ]);
+
+    $service = new PowerBiService;
+
+    // Campaign IDs reach the service in their 18-character form, while the DAX
+    // side truncates to 15. Comparing the two forms directly never matches.
+    $service->getCampaignMetrics('701Pl00000dZrSrIAK');
+
+    Http::assertSent(function ($request) {
+        if (! str_contains($request->url(), 'executeQueries')) {
+            return false;
+        }
+
+        $query = $request->data()['queries'][0]['query'];
+
+        return str_contains($query, '"701Pl00000dZrSr"')
+            && ! str_contains($query, '"701Pl00000dZrSrIAK"');
+    });
+});
