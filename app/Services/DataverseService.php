@@ -100,11 +100,15 @@ class DataverseService
         $cacheKey = 'dataverse_email_logs_'.md5($campaignId.'|'.$emailName.'|'.$cursor.'|'.$pageSize.'|'.($deliveredOnly ? '1' : '0'));
 
         return Cache::remember($cacheKey, $this->cacheTtl(), function () use ($campaignId, $emailName, $cursor, $pageSize, $deliveredOnly) {
-            // cr21a_campaignid holds the 15-character Salesforce ID, while the
-            // IDs coming from Power BI are the 18-character form. Comparing the
-            // two forms never matches, so every send came back with 0 recipients.
+            // cr21a_campaignid is not stored in a single shape: most rows hold
+            // the 15-character Salesforce ID, a few hold the 18-character form,
+            // and some sends have it empty altogether. Power BI always hands us
+            // the 18-character form, so an `eq` against either shape drops rows.
+            // Matching on the 15-character prefix covers both forms, and the
+            // empty rows are kept because the email name already identifies the
+            // send.
             $filter = sprintf(
-                "cr21a_emailname eq '%s' and cr21a_campaignid eq '%s'",
+                "cr21a_emailname eq '%s' and (startswith(cr21a_campaignid,'%s') or cr21a_campaignid eq null)",
                 $this->escape($emailName),
                 $this->escape(PowerBiDataTransformer::normalizeSalesforceId($campaignId)),
             );
