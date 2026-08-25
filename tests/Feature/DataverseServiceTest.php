@@ -113,7 +113,7 @@ test('getEmailEngagementLogs filters by email name and campaign id', function ()
         $url = urldecode($request->url());
 
         return str_contains($url, "cr21a_emailname eq 'CARIB_CAY_Event_SolutionSession_Ent_Apr2026_Register2'")
-            && str_contains($url, "cr21a_campaignid eq '701Pl00001TVgOQ'")
+            && str_contains($url, "startswith(cr21a_campaignid,'701Pl00001TVgOQ')")
             && str_contains($url, '$count=true')
             && $request->header('Prefer')[0] === 'odata.maxpagesize=100';
     });
@@ -246,8 +246,9 @@ test('getEmailEngagementLogs filters with the 15-character campaign id', functio
         ]),
     ]);
 
-    // cr21a_campaignid holds 15-character IDs; the IDs coming from Power BI are
-    // 18 characters, and comparing the two forms never matches.
+    // cr21a_campaignid holds a mix of 15- and 18-character IDs (and some empty
+    // values); the IDs coming from Power BI are always 18 characters, so the
+    // filter has to match on the shared 15-character prefix.
     (new DataverseService)->getEmailEngagementLogs(
         '701Pl00001NdCmkIAF',
         'CARIB_BAR_Event_CybersecSummit_Ent_Mar2026',
@@ -260,7 +261,8 @@ test('getEmailEngagementLogs filters with the 15-character campaign id', functio
 
         $url = urldecode($request->url());
 
-        return str_contains($url, "cr21a_campaignid eq '701Pl00001NdCmk'")
+        return str_contains($url, "startswith(cr21a_campaignid,'701Pl00001NdCmk')")
+            && str_contains($url, 'cr21a_campaignid eq null')
             && ! str_contains($url, '701Pl00001NdCmkIAF');
     });
 });
