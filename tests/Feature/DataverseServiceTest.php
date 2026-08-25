@@ -236,3 +236,31 @@ test('getEmailEngagementLogs caches delivered-only pages separately', function (
 
     Http::assertSentCount(3); // token + two distinct log queries
 });
+
+test('getEmailEngagementLogs filters with the 15-character campaign id', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'dv-token']),
+        'org9e047986.api.crm.dynamics.com/*' => Http::response([
+            '@odata.count' => 0,
+            'value' => [],
+        ]),
+    ]);
+
+    // cr21a_campaignid holds 15-character IDs; the IDs coming from Power BI are
+    // 18 characters, and comparing the two forms never matches.
+    (new DataverseService)->getEmailEngagementLogs(
+        '701Pl00001NdCmkIAF',
+        'CARIB_BAR_Event_CybersecSummit_Ent_Mar2026',
+    );
+
+    Http::assertSent(function ($request) {
+        if (! str_contains($request->url(), 'cr21a_emailengagementlogs')) {
+            return false;
+        }
+
+        $url = urldecode($request->url());
+
+        return str_contains($url, "cr21a_campaignid eq '701Pl00001NdCmk'")
+            && ! str_contains($url, '701Pl00001NdCmkIAF');
+    });
+});

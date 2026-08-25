@@ -1,4 +1,4 @@
-import { BarChart3, Eye, MousePointerClick, AlertTriangle, Mail, TrendingUp, Users } from 'lucide-react';
+import { BarChart3, Eye, MousePointerClick, AlertTriangle, Mail, Users } from 'lucide-react';
 import { useState } from 'react';
 import type { ComponentType } from 'react';
 import { MetricEmailsModal } from '@/components/metric-emails-modal';
@@ -172,8 +172,19 @@ export function CampaignMetrics({ campaignId, metrics, emails = [], isLoading = 
                         <BarChart3 className="h-6 w-6 text-muted-foreground" />
                     </div>
                     <div className="text-center">
-                        <p className="text-sm font-medium text-foreground">No metrics yet</p>
-                        <p className="text-xs text-muted-foreground mt-1">Select a campaign to view metrics</p>
+                        {campaignId ? (
+                            <>
+                                <p className="text-sm font-medium text-foreground">No email metrics for this campaign</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    This campaign has no rows in the Email Campaign Metrics report
+                                </p>
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-sm font-medium text-foreground">No metrics yet</p>
+                                <p className="text-xs text-muted-foreground mt-1">Select a campaign to view metrics</p>
+                            </>
+                        )}
                     </div>
                 </CardContent>
             </Card>

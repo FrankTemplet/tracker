@@ -100,10 +100,13 @@ class DataverseService
         $cacheKey = 'dataverse_email_logs_'.md5($campaignId.'|'.$emailName.'|'.$cursor.'|'.$pageSize.'|'.($deliveredOnly ? '1' : '0'));
 
         return Cache::remember($cacheKey, $this->cacheTtl(), function () use ($campaignId, $emailName, $cursor, $pageSize, $deliveredOnly) {
+            // cr21a_campaignid holds the 15-character Salesforce ID, while the
+            // IDs coming from Power BI are the 18-character form. Comparing the
+            // two forms never matches, so every send came back with 0 recipients.
             $filter = sprintf(
                 "cr21a_emailname eq '%s' and cr21a_campaignid eq '%s'",
                 $this->escape($emailName),
-                $this->escape($campaignId),
+                $this->escape(PowerBiDataTransformer::normalizeSalesforceId($campaignId)),
             );
 
             if ($deliveredOnly) {
