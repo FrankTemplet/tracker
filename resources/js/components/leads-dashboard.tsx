@@ -1,11 +1,13 @@
 import { useState, useMemo, useEffect } from 'react';
 import { TrendingUp, BarChart3, Target, ChevronLeft, ChevronRight, Filter, User, Clock, ArrowRightLeft, Tag, Activity, Hourglass } from 'lucide-react';
+import { LeadAgingCard, LeadFunnelCard, LeadSourceCard } from '@/components/leads-analytics';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { LucideIcon } from 'lucide-react';
 import { formatDuration, agingSeverity, AGING_TEXT_CLASS, AGING_BADGE_CLASS } from '@/lib/format-duration';
+import { buildAgingSummary, buildFunnel, buildSourceBreakdown, parseLeadDate } from '@/lib/lead-analytics';
 
 export interface LeadSummaryLatam {
     leads_assigned: number;
@@ -41,6 +43,14 @@ export interface LeadHistoryEvent {
     delta_hours: number | null;
 }
 
+/**
+ * Aging for one lead, reduced to the three numbers the aggregate panel plots:
+ * `[age_hours, hours_to_first_touch, owner_change_count]`. Null when the lead
+ * has no parseable Create Date. The lead detail modal still fetches the full
+ * LeadAging object on demand — see useLeadHistory.
+ */
+export type LeadAgingTuple = [number, number | null, number];
+
 export interface Lead {
     lead_id: string;
     name: string;
@@ -54,6 +64,7 @@ export interface Lead {
     created_alias: string;
     lead_source: string;
     lead_status: string;
+    aging: LeadAgingTuple | null;
 }
 
 export interface LeadsDashboardPageProps {
@@ -110,14 +121,6 @@ const PERIOD_OPTIONS = [
     { value: 'this_year', label: 'This year' },
     { value: 'last_year', label: 'Last year' },
 ];
-
-function parseLeadDate(dateStr: string): Date | null {
-    if (!dateStr) return null;
-    const parts = dateStr.split('/');
-    if (parts.length !== 3) return null;
-    const [m, d, y] = parts.map(Number);
-    return new Date(y, m - 1, d);
-}
 
 function filterByPeriod(leads: Lead[], period: string): Lead[] {
     if (period === 'all') return leads;
@@ -662,6 +665,10 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
     // Cards, table and drill-down modal all read from the same filtered set.
     const counts = useMemo(() => countLeadsByCard(filteredLeads), [filteredLeads]);
 
+    const funnel = useMemo(() => buildFunnel(filteredLeads), [filteredLeads]);
+    const sourceSlices = useMemo(() => buildSourceBreakdown(filteredLeads), [filteredLeads]);
+    const agingSummary = useMemo(() => buildAgingSummary(filteredLeads), [filteredLeads]);
+
     const modalLeads = useMemo(
         () => (modalCard ? getLeadsByCard(filteredLeads, modalCard) : []),
         [filteredLeads, modalCard],
@@ -743,6 +750,13 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
                             colorClass="text-amber-600 dark:text-amber-400" iconBgClass="bg-amber-500/10"
                             onClick={() => setModalCard('sqls')} />
                     </div>
+                    <div className="grid gap-6 lg:grid-cols-3">
+                        <div className="lg:col-span-2">
+                            <LeadFunnelCard funnel={funnel} />
+                        </div>
+                        <LeadSourceCard slices={sourceSlices} total={filteredLeads.length} />
+                    </div>
+                    <LeadAgingCard aging={agingSummary} />
                     <LeadsTable leads={filteredLeads} onSelectLead={setSelectedLead} />
                 </div>
             ) : (
@@ -758,6 +772,13 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
                             colorClass="text-amber-600 dark:text-amber-400" iconBgClass="bg-amber-500/10"
                             onClick={() => setModalCard('sqls')} />
                     </div>
+                    <div className="grid gap-6 lg:grid-cols-3">
+                        <div className="lg:col-span-2">
+                            <LeadFunnelCard funnel={funnel} />
+                        </div>
+                        <LeadSourceCard slices={sourceSlices} total={filteredLeads.length} />
+                    </div>
+                    <LeadAgingCard aging={agingSummary} />
                     <LeadsTable leads={filteredLeads} onSelectLead={setSelectedLead} />
                 </div>
             )}

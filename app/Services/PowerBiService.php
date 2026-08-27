@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -398,7 +399,7 @@ class PowerBiService
      */
     public function getLeadsData(string $region): array
     {
-        $cacheKey = 'powerbi_leads_v2_'.$region;
+        $cacheKey = 'powerbi_leads_v3_'.$region;
 
         return Cache::remember($cacheKey, $this->cacheTtl(), function () use ($region) {
             $token = $this->getAccessToken();
@@ -422,6 +423,15 @@ class PowerBiService
             }
 
             $rows = $this->parsePowerBiResponse($response->json());
+
+            // The aggregate Aging panel needs a per-lead measurement, but the full
+            // aging object (10 fields, two ISO timestamps) roughly doubled the
+            // Inertia payload when it was carried for every lead. The compact
+            // tuple below is the same measurement in ~20 bytes, so the panel can
+            // honour the page filters without the payload cost. The lead detail
+            // modal still fetches the full object on demand.
+            $history = $this->getLeadHistoryRows();
+            $now = CarbonImmutable::now();
 
             $leadsCreated = 0;
             $leadsAssigned = 0;
@@ -469,6 +479,11 @@ class PowerBiService
                     'created_alias' => $createdAlias,
                     'lead_source' => $row['(raw) Lead v2[Lead Source]'] ?? '',
                     'lead_status' => $row['(raw) Lead v2[Lead Status]'] ?? '',
+                    'aging' => PowerBiDataTransformer::compactLeadAging(
+                        $row['(raw) Lead v2[Create Date]'] ?? '',
+                        $history[PowerBiDataTransformer::normalizeLeadId($row['(raw) Lead v2[Lead ID]'] ?? '')] ?? [],
+                        $now,
+                    ),
                 ];
             }
 

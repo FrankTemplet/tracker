@@ -136,10 +136,24 @@ interface CampaignMetricsProps {
 }
 
 export function CampaignMetrics({ campaignId, metrics, emails = [], isLoading = false, region }: CampaignMetricsProps) {
+    /** Metrics drilled from '(raw) Engagement' need only a non-zero count. */
+    const canOpenMembers = (count: number) => count > 0;
+
+    /** Metrics drilled from the email rows need those rows to exist as well. */
+    const canOpenEmails = (count: number) => count > 0 && emails.length > 0;
+
     const [activeMetric, setActiveMetric] = useState<MetricDrilldownKey | null>(null);
     const [activeMembersMetric, setActiveMembersMetric] = useState<string | null>(null);
     const [modalTitle, setModalTitle] = useState('');
 
+    /**
+     * Open the drill-down for a metric.
+     *
+     * The guards below are a backstop only: a tile whose drill-down cannot open
+     * is rendered non-interactive, so a click that reaches here already has
+     * something to show. Leaving the tile clickable and bailing silently is what
+     * made a zero-valued tile look broken.
+     */
     const openDrilldown = (metric: MetricDrilldownKey, title: string, count: number) => {
         if (count <= 0) {
             return;
@@ -217,7 +231,7 @@ export function CampaignMetrics({ campaignId, metrics, emails = [], isLoading = 
                         iconBgClass="bg-emerald-500/10"
                         Icon={Mail}
                         isLoading={isLoading}
-                        clickable
+                        clickable={canOpenEmails(metrics?.delivered ?? 0)}
                         onClick={() => openDrilldown('delivered', 'Delivered', metrics?.delivered ?? 0)}
                     />
                     <MetricTile
@@ -228,7 +242,7 @@ export function CampaignMetrics({ campaignId, metrics, emails = [], isLoading = 
                         iconBgClass="bg-sky-500/10"
                         Icon={Eye}
                         isLoading={isLoading}
-                        clickable
+                        clickable={canOpenMembers(metrics?.unique_opens ?? 0)}
                         onClick={() => openDrilldown('unique-opens', 'Unique Opens', metrics?.unique_opens ?? 0)}
                     />
                     <MetricTile
@@ -239,7 +253,7 @@ export function CampaignMetrics({ campaignId, metrics, emails = [], isLoading = 
                         iconBgClass="bg-indigo-500/10"
                         Icon={MousePointerClick}
                         isLoading={isLoading}
-                        clickable
+                        clickable={canOpenEmails(metrics?.unique_clicks ?? 0)}
                         onClick={() => openDrilldown('unique-clicks', 'Unique Clicks', metrics?.unique_clicks ?? 0)}
                     />
                 </div>
@@ -253,7 +267,7 @@ export function CampaignMetrics({ campaignId, metrics, emails = [], isLoading = 
                         iconBgClass="bg-amber-500/10"
                         Icon={AlertTriangle}
                         isLoading={isLoading}
-                        clickable
+                        clickable={canOpenEmails(metrics?.hard_bounces ?? 0)}
                         onClick={() => openDrilldown('hard-bounces', 'Hard Bounces', metrics?.hard_bounces ?? 0)}
                     />
                     <MetricTile
@@ -287,7 +301,7 @@ export function CampaignMetrics({ campaignId, metrics, emails = [], isLoading = 
                         iconBgClass="bg-teal-500/10"
                         Icon={Users}
                         isLoading={isLoading}
-                        clickable
+                        clickable={canOpenMembers(metrics?.registered_appointment ?? 0)}
                         onClick={() => openDrilldown('registered-appointment', 'Registered / Schedule Appointment', metrics?.registered_appointment ?? 0)}
                     />
                 </div>

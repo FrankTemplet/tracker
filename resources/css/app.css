@@ -95,6 +95,30 @@
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.87 0 0);
+
+    /* Data-visualisation palette.
+       Categorical slots are a fixed, validated order: reassigning a colour by
+       rank would repaint every series whenever a filter changes the ranking, so
+       a source always keeps its slot. The ramp is ordinal (one hue, monotone
+       lightness) and drives the funnel and the aging buckets. Both sets were
+       validated for colour-vision separation, step spacing and surface
+       contrast against the light and dark surfaces. */
+    --viz-surface: oklch(1 0 0);
+    --viz-cat-1: #2a78d6;
+    --viz-cat-2: #eb6834;
+    --viz-cat-3: #1baf7a;
+    --viz-cat-4: #eda100;
+    --viz-cat-5: #e87ba4;
+    --viz-cat-6: #008300;
+    --viz-cat-7: #4a3aa7;
+    --viz-unknown: oklch(0.75 0 0);
+    --viz-ramp-1: #86b6ef;
+    --viz-ramp-2: #5598e7;
+    --viz-ramp-3: #2a78d6;
+    --viz-ramp-4: #1c5cab;
+    --viz-ramp-5: #104281;
+    --viz-danger: #e34948;
+    --viz-grid: oklch(0.92 0 0);
 }
 
 .dark {
@@ -130,6 +154,25 @@
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(0.269 0 0);
     --sidebar-ring: oklch(0.439 0 0);
+    /* Dark steps for the same slots — chosen for the dark surface and validated
+       as a set, not flipped from the light values. */
+    --viz-surface: oklch(0.145 0 0);
+    --viz-cat-1: #3987e5;
+    --viz-cat-2: #d95926;
+    --viz-cat-3: #199e70;
+    --viz-cat-4: #c98500;
+    --viz-cat-5: #d55181;
+    --viz-cat-6: #008300;
+    --viz-cat-7: #9085e9;
+    --viz-unknown: oklch(0.5 0 0);
+    --viz-ramp-1: #184f95;
+    --viz-ramp-2: #256abf;
+    --viz-ramp-3: #3987e5;
+    --viz-ramp-4: #6da7ec;
+    --viz-ramp-5: #9ec5f4;
+    --viz-danger: #e66767;
+    --viz-grid: oklch(0.3 0 0);
+
 }
 
 @layer base {

@@ -344,6 +344,35 @@ test('buildLeadAging measures idle time from the most recent event', function ()
         ->and($aging['event_count'])->toBe(2);
 });
 
+test('compactLeadAging reduces the aging measurement to the three plotted numbers', function () {
+    $now = CarbonImmutable::create(2025, 5, 20, 12, 0, 0);
+
+    $compact = PowerBiDataTransformer::compactLeadAging(
+        '5/6/2025',
+        historyRows(['5/8/2025 2:11:00 PM', '5/6/2025 9:04:00 AM']),
+        $now,
+    );
+
+    // [age_hours, hours_to_first_touch, owner_change_count] — same numbers the
+    // full object carries, in the shape the leads page ships for every lead.
+    expect($compact)->toBe([348.0, 9.07, 2]);
+});
+
+test('compactLeadAging reports a null first touch for an untouched lead', function () {
+    $now = CarbonImmutable::create(2025, 5, 20, 12, 0, 0);
+
+    $compact = PowerBiDataTransformer::compactLeadAging('5/6/2025', [], $now);
+
+    expect($compact)->toBe([348.0, null, 0]);
+});
+
+test('compactLeadAging returns null when the creation date cannot be parsed', function () {
+    $now = CarbonImmutable::create(2025, 5, 20, 12, 0, 0);
+
+    expect(PowerBiDataTransformer::compactLeadAging('', historyRows(['5/6/2025 9:04:00 AM']), $now))->toBeNull()
+        ->and(PowerBiDataTransformer::compactLeadAging('garbage', [], $now))->toBeNull();
+});
+
 test('buildLeadHistoryTimeline sorts events and measures the gap between them', function () {
     $timeline = PowerBiDataTransformer::buildLeadHistoryTimeline(
         historyRows(['5/8/2025 2:11:00 PM', '5/6/2025 9:04:00 AM']),

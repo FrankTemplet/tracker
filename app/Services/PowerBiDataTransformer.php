@@ -466,4 +466,30 @@ class PowerBiDataTransformer
             'created_precision' => 'date',
         ];
     }
+
+    /**
+     * The same aging measurement as buildLeadAging(), reduced to the three
+     * numbers the aggregate Aging panel plots.
+     *
+     * The leads page carries this for every lead so the panel can respond to the
+     * page filters client-side. Shipping the full aging object instead roughly
+     * doubled the Inertia payload, which is why this compact shape exists.
+     *
+     * @param  array<int, array>  $historyRows  Raw history rows for this lead
+     * @return array{0: float, 1: ?float, 2: int}|null  [age_hours, hours_to_first_touch, owner_change_count]
+     */
+    public static function compactLeadAging(string $createdDate, array $historyRows, ?CarbonImmutable $now = null): ?array
+    {
+        $aging = self::buildLeadAging($createdDate, $historyRows, $now);
+
+        if ($aging === null) {
+            return null;
+        }
+
+        return [
+            $aging['age_hours'],
+            $aging['time_to_first_touch_hours'],
+            $aging['event_count'],
+        ];
+    }
 }
