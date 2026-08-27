@@ -188,7 +188,7 @@ test('getMembersByStatus returns filtered members', function () {
         ->and($members[0]['email'])->toBe('john@example.com');
 });
 
-test('getUniqueCampaigns returns unique campaigns list', function () {
+test('getEngagementCampaigns returns every campaign seen in the engagement table', function () {
     Http::fake([
         'login.microsoftonline.com/*' => Http::response(['access_token' => 'fake-token']),
         'api.powerbi.com/*/executeQueries' => Http::response([
@@ -218,13 +218,131 @@ test('getUniqueCampaigns returns unique campaigns list', function () {
     ]);
 
     $service = new PowerBiService;
-    $campaigns = $service->getUniqueCampaigns();
+    $campaigns = $service->getEngagementCampaigns();
 
     expect($campaigns)->toHaveCount(2)
         ->and($campaigns[0]['campaign_id'])->toBe('701Pl00000hB2yb')
         ->and($campaigns[0]['campaign_name'])->toBe('Test Campaign 1')
         ->and($campaigns[0]['business_unit'])->toBe('CaribRegional')
         ->and($campaigns[1]['campaign_id'])->toBe('701Pl00000hB3xc');
+});
+
+test('getUniqueCampaigns builds the catalogue from the email metrics report', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'fake-token']),
+        'api.powerbi.com/*/executeQueries' => Http::sequence()
+            // First call: the catalogue itself, from '(raw) Email Campaign Metrics'.
+            ->push([
+                'results' => [[
+                    'tables' => [[
+                        'rows' => [
+                            [
+                                '(raw) Email Campaign Metrics[Campaign ID]' => '701Pl00000hB2ybAAB',
+                                '(raw) Email Campaign Metrics[Campaign Name]' => 'CARIB_Emailed_Campaign',
+                                '[first_send]' => '6/2/2025 9:00:00 AM',
+                            ],
+                            [
+                                '(raw) Email Campaign Metrics[Campaign ID]' => '701Pl00000zzzzzAAB',
+                                '(raw) Email Campaign Metrics[Campaign Name]' => 'CARIB_Not_In_Engagement',
+                                '[first_send]' => '7/9/2025 4:00:00 PM',
+                            ],
+                        ],
+                    ]],
+                ]],
+            ])
+            // Second call: the engagement universe it borrows metadata from.
+            ->push([
+                'results' => [[
+                    'tables' => [[
+                        'rows' => [
+                            [
+                                '(raw) Engagement[Campaign ID]' => '701Pl00000hB2ybAAB',
+                                '(raw) Engagement[Campaign Name]' => 'CARIB_Emailed_Campaign',
+                                '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',
+                                '(raw) Engagement[Start Date]' => '5/5/2025',
+                            ],
+                            [
+                                '(raw) Engagement[Campaign ID]' => '701Pl00000neverAAB',
+                                '(raw) Engagement[Campaign Name]' => 'CARIB_Never_Emailed',
+                                '(raw) Engagement[Reporting Business Unit]' => 'CaribENT',
+                                '(raw) Engagement[Start Date]' => '5/6/2025',
+                            ],
+                        ],
+                    ]],
+                ]],
+            ]),
+    ]);
+
+    $service = new PowerBiService;
+    $campaigns = $service->getUniqueCampaigns();
+
+    // Only emailed campaigns make the catalogue: the engagement-only campaign
+    // is dropped, so nothing in the selector can land on an empty state.
+    expect($campaigns)->toHaveCount(2)
+        ->and(array_column($campaigns, 'campaign_name'))
+        ->not->toContain('CARIB_Never_Emailed');
+
+    // Metadata is borrowed from engagement when the campaign exists there.
+    expect($campaigns[0]['campaign_id'])->toBe('701Pl00000hB2ybAAB')
+        ->and($campaigns[0]['business_unit'])->toBe('CaribRegional')
+        ->and($campaigns[0]['start_date'])->toBe('5/5/2025');
+
+    // And falls back to the earliest send when it does not.
+    expect($campaigns[1]['campaign_id'])->toBe('701Pl00000zzzzzAAB')
+        ->and($campaigns[1]['business_unit'])->toBe('')
+        ->and($campaigns[1]['start_date'])->toBe('7/9/2025 4:00:00 PM');
+});
+
+test('campaign sources drop _CR_ campaigns without touching lookalike names', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'fake-token']),
+        'api.powerbi.com/*/executeQueries' => Http::sequence()
+            ->push([
+                'results' => [[
+                    'tables' => [[
+                        'rows' => [
+                            [
+                                '(raw) Email Campaign Metrics[Campaign ID]' => '701Pl00000keepAAB',
+                                '(raw) Email Campaign Metrics[Campaign Name]' => 'LATAM_CrossSell_LCPR_2025',
+                                '[first_send]' => '6/2/2025 9:00:00 AM',
+                            ],
+                            [
+                                '(raw) Email Campaign Metrics[Campaign ID]' => '701Pl00000dropAAB',
+                                '(raw) Email Campaign Metrics[Campaign Name]' => 'LATAM_CR_CM_SME_Mobile5G',
+                                '[first_send]' => '6/3/2025 9:00:00 AM',
+                            ],
+                        ],
+                    ]],
+                ]],
+            ])
+            ->push([
+                'results' => [[
+                    'tables' => [[
+                        'rows' => [
+                            [
+                                '(raw) Engagement[Campaign ID]' => '701Pl00000keepAAB',
+                                '(raw) Engagement[Campaign Name]' => 'LATAM_CrossSell_LCPR_2025',
+                                '(raw) Engagement[Reporting Business Unit]' => 'LatAmENT',
+                                '(raw) Engagement[Start Date]' => '5/5/2025',
+                            ],
+                            [
+                                '(raw) Engagement[Campaign ID]' => '701Pl00000dropAAB',
+                                '(raw) Engagement[Campaign Name]' => 'LATAM_CR_CM_SME_Mobile5G',
+                                '(raw) Engagement[Reporting Business Unit]' => 'LatAmENT',
+                                '(raw) Engagement[Start Date]' => '5/6/2025',
+                            ],
+                        ],
+                    ]],
+                ]],
+            ]),
+    ]);
+
+    $service = new PowerBiService;
+
+    // "LCPR" and "CrossSell" both contain the letters, but only the delimited
+    // "_CR_" token is excluded.
+    expect(array_column($service->getUniqueCampaigns(), 'campaign_name'))
+        ->toBe(['LATAM_CrossSell_LCPR_2025']);
 });
 
 test('hasCredentials returns true when all credentials are configured', function () {

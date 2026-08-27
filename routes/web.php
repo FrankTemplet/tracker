@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\CampaignCoverageController;
 use App\Http\Controllers\EmailEngagementController;
 use App\Http\Controllers\LeadsController;
 use App\Http\Controllers\PowerBiController;
@@ -17,6 +18,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('events', [PowerBiController::class, 'events'])->name('events');
     Route::get('webinars', [PowerBiController::class, 'webinars'])->name('webinars');
     Route::get('leads', [LeadsController::class, 'index'])->name('leads');
+
+    // Diagnostic: which campaigns have email metrics behind them
+    Route::get('campaign-coverage', [CampaignCoverageController::class, 'index'])->name('campaign-coverage');
 
     // User management (admins only)
     Route::middleware('admin')->group(function () {

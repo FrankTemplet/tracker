@@ -7,43 +7,57 @@ use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
+
+/**
+ * Fake the two queries the campaign catalogue now issues.
+ *
+ * getUniqueCampaigns() reads '(raw) Email Campaign Metrics' for the list itself
+ * and '(raw) Engagement' for each campaign's business unit and start date, so a
+ * single canned payload no longer covers it.
+ *
+ * @param  array<int, array{id: string, name: string, bu?: string, start?: string}>  $campaigns
+ */
+function fakeCampaignCatalogue(array $campaigns, ?callable $fallback = null): void
+{
+    $catalogue = array_map(fn (array $c) => [
+        '(raw) Email Campaign Metrics[Campaign ID]' => $c['id'],
+        '(raw) Email Campaign Metrics[Campaign Name]' => $c['name'],
+        '[first_send]' => $c['start'] ?? '5/5/2025 9:00:00 AM',
+    ], $campaigns);
+
+    $universe = array_map(fn (array $c) => [
+        '(raw) Engagement[Campaign ID]' => $c['id'],
+        '(raw) Engagement[Campaign Name]' => $c['name'],
+        '(raw) Engagement[Reporting Business Unit]' => $c['bu'] ?? 'CaribRegional',
+        '(raw) Engagement[Start Date]' => $c['start'] ?? '5/5/2025',
+    ], $campaigns);
+
+    $wrap = fn (array $rows) => Http::response(['results' => [['tables' => [['rows' => $rows]]]]]);
+
+    Http::fake(function ($request) use ($catalogue, $universe, $wrap, $fallback) {
+        if (str_contains($request->url(), 'login.microsoftonline.com')) {
+            return Http::response(['access_token' => 'fake-token']);
+        }
+
+        $body = $request->body();
+
+        if (str_contains($body, 'SUMMARIZECOLUMNS')) {
+            return str_contains($body, 'Email Campaign Metrics') ? $wrap($catalogue) : $wrap($universe);
+        }
+
+        return $fallback ? $fallback($request) : $wrap([]);
+    });
+}
+
 beforeEach(function () {
     $this->user = User::factory()->create();
 });
 
 test('campaigns endpoint returns campaigns from the user region only', function () {
-    Http::fake([
-        'login.microsoftonline.com/*' => Http::response(['access_token' => 'fake-token']),
-        'api.powerbi.com/*' => Http::response([
-            'results' => [
-                [
-                    'tables' => [
-                        [
-                            'rows' => [
-                                [
-                                    '(raw) Engagement[Campaign ID]' => '701Pl00000hB2yb',
-                                    '(raw) Engagement[Campaign Name]' => 'CARIB_Test_Campaign_1',
-                                    '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',
-                                    '(raw) Engagement[Start Date]' => '5/5/2025',
-                                ],
-                                [
-                                    '(raw) Engagement[Campaign ID]' => '701Pl00000hB3xc',
-                                    '(raw) Engagement[Campaign Name]' => 'CARIB_Test_Campaign_2',
-                                    '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',
-                                    '(raw) Engagement[Start Date]' => '5/10/2025',
-                                ],
-                                [
-                                    '(raw) Engagement[Campaign ID]' => '701Pl00000hB4yd',
-                                    '(raw) Engagement[Campaign Name]' => 'LATAM_Test_Campaign_3',
-                                    '(raw) Engagement[Reporting Business Unit]' => 'LATAM',
-                                    '(raw) Engagement[Start Date]' => '5/12/2025',
-                                ],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ]),
+    fakeCampaignCatalogue([
+        ['id' => '701Pl00000hB2yb', 'name' => 'CARIB_Test_Campaign_1'],
+        ['id' => '701Pl00000hB3xc', 'name' => 'CARIB_Test_Campaign_2'],
+        ['id' => '701Pl00000hB4yd', 'name' => 'LATAM_Test_Campaign_3', 'bu' => 'LATAM'],
     ]);
 
     // User has region "carib" by default, so the LATAM campaign is excluded
@@ -62,38 +76,10 @@ test('campaigns endpoint returns campaigns from the user region only', function 
 });
 
 test('campaigns endpoint returns networks and latam campaigns for networks users', function () {
-    Http::fake([
-        'login.microsoftonline.com/*' => Http::response(['access_token' => 'fake-token']),
-        'api.powerbi.com/*' => Http::response([
-            'results' => [
-                [
-                    'tables' => [
-                        [
-                            'rows' => [
-                                [
-                                    '(raw) Engagement[Campaign ID]' => '701Pl00000hB2yb',
-                                    '(raw) Engagement[Campaign Name]' => 'CARIB_Test_Campaign_1',
-                                    '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',
-                                    '(raw) Engagement[Start Date]' => '5/5/2025',
-                                ],
-                                [
-                                    '(raw) Engagement[Campaign ID]' => '701Pl00000hB3xc',
-                                    '(raw) Engagement[Campaign Name]' => 'NETWORKS_Test_Campaign_2',
-                                    '(raw) Engagement[Reporting Business Unit]' => 'Networks',
-                                    '(raw) Engagement[Start Date]' => '5/10/2025',
-                                ],
-                                [
-                                    '(raw) Engagement[Campaign ID]' => '701Pl00000hB4yd',
-                                    '(raw) Engagement[Campaign Name]' => 'LATAM_Test_Campaign_3',
-                                    '(raw) Engagement[Reporting Business Unit]' => 'LATAM',
-                                    '(raw) Engagement[Start Date]' => '5/12/2025',
-                                ],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ]),
+    fakeCampaignCatalogue([
+        ['id' => '701Pl00000hB2yb', 'name' => 'CARIB_Test_Campaign_1'],
+        ['id' => '701Pl00000hB3xc', 'name' => 'NETWORKS_Test_Campaign_2', 'bu' => 'Networks'],
+        ['id' => '701Pl00000hB4yd', 'name' => 'LATAM_Test_Campaign_3', 'bu' => 'LATAM'],
     ]);
 
     $networksUser = User::factory()->networks()->create();
@@ -131,6 +117,17 @@ test('campaign metrics endpoint returns aggregated metrics', function () {
     Http::fake(function ($request) {
         if (str_contains($request->url(), 'login.microsoftonline.com')) {
             return Http::response(['access_token' => 'fake-token']);
+        }
+
+        // The catalogue query and the engagement-metadata query both use
+        // SUMMARIZECOLUMNS, so they are told apart by the table they read.
+        if (str_contains($request->body(), 'SUMMARIZECOLUMNS')
+            && str_contains($request->body(), 'Email Campaign Metrics')) {
+            return Http::response(['results' => [['tables' => [['rows' => [[
+                '(raw) Email Campaign Metrics[Campaign ID]' => '701Pl00000hB2yb',
+                '(raw) Email Campaign Metrics[Campaign Name]' => 'CARIB_Test_Campaign_2025',
+                '[first_send]' => '5/5/2025 9:00:00 AM',
+            ]]]]]]]);
         }
 
         // Campaign lookup used for the region authorization check
@@ -255,6 +252,17 @@ test('campaign members endpoint returns member list by status', function () {
     Http::fake(function ($request) {
         if (str_contains($request->url(), 'login.microsoftonline.com')) {
             return Http::response(['access_token' => 'fake-token']);
+        }
+
+        // The catalogue query and the engagement-metadata query both use
+        // SUMMARIZECOLUMNS, so they are told apart by the table they read.
+        if (str_contains($request->body(), 'SUMMARIZECOLUMNS')
+            && str_contains($request->body(), 'Email Campaign Metrics')) {
+            return Http::response(['results' => [['tables' => [['rows' => [[
+                '(raw) Email Campaign Metrics[Campaign ID]' => '701Pl00000hB2yb',
+                '(raw) Email Campaign Metrics[Campaign Name]' => 'CARIB_Test_Campaign_2025',
+                '[first_send]' => '5/5/2025 9:00:00 AM',
+            ]]]]]]]);
         }
 
         // Campaign lookup used for the region authorization check

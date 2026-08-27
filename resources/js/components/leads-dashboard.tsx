@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { TrendingUp, BarChart3, Target, ChevronLeft, ChevronRight, Filter, User, Clock, ArrowRightLeft, Tag, Activity, Hourglass } from 'lucide-react';
+import { TrendingUp, BarChart3, Target, ChevronLeft, ChevronRight, Filter, User, Users, Clock, ArrowRightLeft, Tag, Activity, Hourglass } from 'lucide-react';
 import { LeadAgingCard, LeadFunnelCard, LeadSourceCard } from '@/components/leads-analytics';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -74,7 +74,7 @@ export interface LeadsDashboardPageProps {
     error?: string;
 }
 
-type CardKey = 'leads_created' | 'leads_assigned' | 'mqls' | 'sqls';
+type CardKey = 'total' | 'leads_created' | 'leads_assigned' | 'mqls' | 'sqls';
 
 // ---------------------------------------------------------------------------
 // Stat card
@@ -145,6 +145,7 @@ function filterByPeriod(leads: Lead[], period: string): Lead[] {
 
 function getLeadsByCard(leads: Lead[], card: CardKey): Lead[] {
     switch (card) {
+        case 'total': return leads;
         case 'leads_created': return leads.filter(l => l.created_by === 'Sales Outcomes Lead Triage');
         case 'leads_assigned': return leads.filter(l => l.created_alias === 'b2bmausr' || l.created_alias === 'LeadTrge');
         case 'mqls': return leads.filter(l => l.lead_stage === 'MQL');
@@ -154,6 +155,7 @@ function getLeadsByCard(leads: Lead[], card: CardKey): Lead[] {
 
 function countLeadsByCard(leads: Lead[]): Record<CardKey, number> {
     return {
+        total: leads.length,
         leads_created: getLeadsByCard(leads, 'leads_created').length,
         leads_assigned: getLeadsByCard(leads, 'leads_assigned').length,
         mqls: getLeadsByCard(leads, 'mqls').length,
@@ -162,6 +164,7 @@ function countLeadsByCard(leads: Lead[]): Record<CardKey, number> {
 }
 
 const CARD_LABELS: Record<CardKey, string> = {
+    total: "Total Leads",
     leads_created: "Leads Created",
     leads_assigned: "Leads Assigned",
     mqls: "MQL's",
@@ -736,13 +739,16 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
 
             {isCarib ? (
                 <div className="flex flex-col gap-6">
-                    <div className="grid grid-cols-4 gap-4">
-                        <StatCard label="Leads created" value={counts.leads_created} icon={TrendingUp}
-                            colorClass="text-emerald-600 dark:text-emerald-400" iconBgClass="bg-emerald-500/10"
-                            onClick={() => setModalCard('leads_created')} />
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                        <StatCard label="Total leads" value={counts.total} icon={Users}
+                            colorClass="text-foreground" iconBgClass="bg-muted"
+                            onClick={() => setModalCard('total')} />
                         <StatCard label="Leads assigned" value={counts.leads_assigned} icon={TrendingUp}
                             colorClass="text-sky-600 dark:text-sky-400" iconBgClass="bg-sky-500/10"
                             onClick={() => setModalCard('leads_assigned')} />
+                        <StatCard label="Leads created" value={counts.leads_created} icon={TrendingUp}
+                            colorClass="text-emerald-600 dark:text-emerald-400" iconBgClass="bg-emerald-500/10"
+                            onClick={() => setModalCard('leads_created')} />
                         <StatCard label="MQL's" value={counts.mqls} icon={Target}
                             colorClass="text-violet-600 dark:text-violet-400" iconBgClass="bg-violet-500/10"
                             onClick={() => setModalCard('mqls')} />
@@ -761,7 +767,10 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
                 </div>
             ) : (
                 <div className="flex flex-col gap-6">
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <StatCard label="Total leads" value={counts.total} icon={Users}
+                            colorClass="text-foreground" iconBgClass="bg-muted"
+                            onClick={() => setModalCard('total')} />
                         <StatCard label="Leads assigned" value={counts.leads_assigned} icon={TrendingUp}
                             colorClass="text-sky-600 dark:text-sky-400" iconBgClass="bg-sky-500/10"
                             onClick={() => setModalCard('leads_assigned')} />

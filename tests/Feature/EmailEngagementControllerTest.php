@@ -27,10 +27,18 @@ beforeEach(function () {
 
 /**
  * Fake the campaign list used to authorize the request.
+ *
+ * Authorization goes through getUniqueCampaigns(), which reads the catalogue
+ * from '(raw) Email Campaign Metrics' and then the metadata from
+ * '(raw) Engagement'. These tests serve one canned payload to every Power BI
+ * call, so each row carries both column sets and satisfies either query.
  */
 function fakeCampaigns(array $campaigns): array
 {
     $rows = array_map(fn (array $c) => [
+        '(raw) Email Campaign Metrics[Campaign ID]' => $c['id'],
+        '(raw) Email Campaign Metrics[Campaign Name]' => $c['name'],
+        '[first_send]' => '4/30/2026 9:00:00 AM',
         '(raw) Engagement[Campaign ID]' => $c['id'],
         '(raw) Engagement[Campaign Name]' => $c['name'],
         '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',

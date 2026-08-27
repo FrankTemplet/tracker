@@ -11,33 +11,64 @@ class PowerBiControllerIntegrationTest extends TestCase
 {
     use RefreshDatabase;
 
+    /** The campaign catalogue query, which reads '(raw) Email Campaign Metrics'. */
+    private function catalogueResponse()
+    {
+        return Http::response([
+            'results' => [[
+                'tables' => [[
+                    'rows' => [[
+                        '(raw) Email Campaign Metrics[Campaign ID]' => '701Pl00000hB2yb',
+                        '(raw) Email Campaign Metrics[Campaign Name]' => 'CARIB_Test_Campaign_2025',
+                        '[first_send]' => '5/5/2025 10:00:00 AM',
+                    ]],
+                ]],
+            ]],
+        ]);
+    }
+
+    /** The engagement universe the catalogue borrows business unit and start date from. */
+    private function engagementUniverseResponse()
+    {
+        return Http::response([
+            'results' => [[
+                'tables' => [[
+                    'rows' => [[
+                        '(raw) Engagement[Campaign ID]' => '701Pl00000hB2yb',
+                        '(raw) Engagement[Campaign Name]' => 'CARIB_Test_Campaign_2025',
+                        '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',
+                        '(raw) Engagement[Start Date]' => '5/5/2025',
+                    ]],
+                ]],
+            ]],
+        ]);
+    }
+
+    /** Route a faked Power BI call to the right canned payload. */
+    private function fakePowerBi(callable $fallback): void
+    {
+        Http::fake(function ($request) use ($fallback) {
+            if (str_contains($request->url(), 'login.microsoftonline.com')) {
+                return Http::response(['access_token' => 'fake_token_abc123']);
+            }
+
+            $body = $request->body();
+
+            if (str_contains($body, 'SUMMARIZECOLUMNS')) {
+                return str_contains($body, 'Email Campaign Metrics')
+                    ? $this->catalogueResponse()
+                    : $this->engagementUniverseResponse();
+            }
+
+            return $fallback($request);
+        });
+    }
+
     public function test_campaigns_endpoint_returns_transformed_unique_campaigns(): void
     {
         $this->actingAs(User::factory()->create());
 
-        Http::fake([
-            'login.microsoftonline.com/*' => Http::response([
-                'access_token' => 'fake_token_abc123',
-            ]),
-            'api.powerbi.com/*' => Http::response([
-                'results' => [
-                    [
-                        'tables' => [
-                            [
-                                'rows' => [
-                                    [
-                                        '(raw) Engagement[Campaign ID]' => '701Pl00000hB2yb',
-                                        '(raw) Engagement[Campaign Name]' => 'CARIB_JAM_Prod_CloudSuite_Ent_May2025',
-                                        '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',
-                                        '(raw) Engagement[Start Date]' => '5/5/2025',
-                                    ],
-                                ],
-                            ],
-                        ],
-                    ],
-                ],
-            ]),
-        ]);
+        $this->fakePowerBi(fn () => Http::response(['results' => [['tables' => [['rows' => []]]]]]));
 
         $response = $this->getJson('/api/powerbi/campaigns');
 
@@ -49,41 +80,14 @@ class PowerBiControllerIntegrationTest extends TestCase
             ],
         ]);
         $response->assertJsonPath('data.0.id', '701Pl00000hB2yb');
-        $response->assertJsonPath('data.0.name', 'CARIB_JAM_Prod_CloudSuite_Ent_May2025');
+        $response->assertJsonPath('data.0.name', 'CARIB_Test_Campaign_2025');
     }
 
     public function test_campaign_metrics_endpoint_returns_aggregated_metrics(): void
     {
         $this->actingAs(User::factory()->create());
 
-        Http::fake(function ($request) {
-            if (str_contains($request->url(), 'login.microsoftonline.com')) {
-                return Http::response(['access_token' => 'fake_token_abc123']);
-            }
-
-            // Campaign lookup used for the region authorization check
-            if (str_contains($request->body(), 'SUMMARIZECOLUMNS')) {
-                return Http::response([
-                    'results' => [
-                        [
-                            'tables' => [
-                                [
-                                    'rows' => [
-                                        [
-                                            '(raw) Engagement[Campaign ID]' => '701Pl00000hB2yb',
-                                            '(raw) Engagement[Campaign Name]' => 'CARIB_Test_Campaign_2025',
-                                            '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',
-                                            '(raw) Engagement[Start Date]' => '5/5/2025',
-                                        ],
-                                    ],
-                                ],
-                            ],
-                        ],
-                    ],
-                ]);
-            }
-
-            return Http::response([
+        $this->fakePowerBi(fn () => Http::response([
                 'results' => [
                     [
                         'tables' => [
@@ -113,8 +117,7 @@ class PowerBiControllerIntegrationTest extends TestCase
                         ],
                     ],
                 ],
-            ]);
-        });
+            ]));
 
         $response = $this->getJson('/api/powerbi/campaigns/701Pl00000hB2yb/metrics');
 
@@ -152,34 +155,7 @@ class PowerBiControllerIntegrationTest extends TestCase
     {
         $this->actingAs(User::factory()->create());
 
-        Http::fake(function ($request) {
-            if (str_contains($request->url(), 'login.microsoftonline.com')) {
-                return Http::response(['access_token' => 'fake_token_abc123']);
-            }
-
-            // Campaign lookup used for the region authorization check
-            if (str_contains($request->body(), 'SUMMARIZECOLUMNS')) {
-                return Http::response([
-                    'results' => [
-                        [
-                            'tables' => [
-                                [
-                                    'rows' => [
-                                        [
-                                            '(raw) Engagement[Campaign ID]' => '701Pl00000hB2yb',
-                                            '(raw) Engagement[Campaign Name]' => 'CARIB_Test_Campaign_2025',
-                                            '(raw) Engagement[Reporting Business Unit]' => 'CaribRegional',
-                                            '(raw) Engagement[Start Date]' => '5/5/2025',
-                                        ],
-                                    ],
-                                ],
-                            ],
-                        ],
-                    ],
-                ]);
-            }
-
-            return Http::response([
+        $this->fakePowerBi(fn () => Http::response([
                 'results' => [
                     [
                         'tables' => [
@@ -206,8 +182,7 @@ class PowerBiControllerIntegrationTest extends TestCase
                         ],
                     ],
                 ],
-            ]);
-        });
+            ]));
 
         $response = $this->getJson('/api/powerbi/campaigns/701Pl00000hB2yb/members/Opened');
 

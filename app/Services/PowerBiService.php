@@ -204,18 +204,142 @@ class PowerBiService
     }
 
     /**
-     * Get all unique campaigns from engagement data.
+     * Campaign-name fragments excluded from every email report.
+     *
+     * Matching is case-insensitive and the underscores are part of the token, so
+     * "_CR_" hits "LATAM_CR_CM_SME_…" without catching names that merely contain
+     * the letters, such as "LATAM_CrossSell_LCPR_2025".
+     *
+     * This applies to the email side only — Dashboard, Events, Webinars and the
+     * coverage report. Lead reporting is not filtered by it.
+     */
+    private const EXCLUDED_CAMPAIGN_FRAGMENTS = ['_CR_'];
+
+    /** Whether a campaign is held out of the email reports by name. */
+    private function isExcludedCampaign(string $campaignName): bool
+    {
+        foreach (self::EXCLUDED_CAMPAIGN_FRAGMENTS as $fragment) {
+            if (stripos($campaignName, $fragment) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The campaign catalogue the pages offer for selection.
+     *
+     * Sourced from '(raw) Email Campaign Metrics', so every campaign on the
+     * list has metrics behind it. Building it from '(raw) Engagement' instead
+     * put ~222 campaigns in the selector when only 67 could ever render a tile,
+     * which is why most selections used to land on an empty state.
+     *
+     * Business unit and start date are not in the email report, so they are
+     * borrowed from '(raw) Engagement' where the campaign exists there (65 of
+     * 67 today). The remaining campaigns keep an empty business unit and fall
+     * back to their earliest scheduled send.
+     *
+     * IDs come back in the same 18-character form '(raw) Engagement' uses and
+     * are byte-identical for every campaign present in both, so the member and
+     * metadata queries that match on the raw ID keep working untouched.
      *
      * @return array<int, array{campaign_id: string, campaign_name: string, business_unit: string, start_date: string}>
      */
     public function getUniqueCampaigns(): array
+    {
+        if (! $this->hasCredentials()) {
+            return FakePowerBiData::getUniqueCampaigns();
+        }
+
+        return Cache::remember('powerbi_campaigns_v2', $this->cacheTtl(), function () {
+            $token = $this->getAccessToken();
+            $url = $this->buildExecuteQueriesUrl();
+
+            // MIN() over [Scheduled Date] is only a fallback for the handful of
+            // campaigns missing from '(raw) Engagement'; the column is not a
+            // typed date, so treat the result as indicative rather than exact.
+            $dax = <<<'DAX'
+                EVALUATE
+                SUMMARIZECOLUMNS(
+                    '(raw) Email Campaign Metrics'[Campaign ID],
+                    '(raw) Email Campaign Metrics'[Campaign Name],
+                    "first_send", MIN('(raw) Email Campaign Metrics'[Scheduled Date])
+                )
+                DAX;
+
+            $response = Http::withToken($token)->post($url, [
+                'queries' => [['query' => $dax]],
+                'serializerSettings' => ['includeNulls' => true],
+            ]);
+
+            if ($response->failed()) {
+                Log::error('Failed to fetch campaign catalogue from Power BI', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
+                throw new \Exception('Failed to fetch campaigns: '.$response->status());
+            }
+
+            $engagementByKey = [];
+
+            foreach ($this->getEngagementCampaigns() as $campaign) {
+                $key = PowerBiDataTransformer::normalizeSalesforceId($campaign['campaign_id'] ?? '');
+
+                if ($key !== '') {
+                    $engagementByKey[$key] = $campaign;
+                }
+            }
+
+            $campaigns = [];
+
+            foreach ($this->parsePowerBiResponse($response->json()) as $row) {
+                $campaignId = (string) ($row['(raw) Email Campaign Metrics[Campaign ID]'] ?? '');
+
+                if ($campaignId === '') {
+                    continue;
+                }
+
+                $campaignName = (string) ($row['(raw) Email Campaign Metrics[Campaign Name]'] ?? '');
+
+                if ($this->isExcludedCampaign($campaignName)) {
+                    continue;
+                }
+
+                $engagement = $engagementByKey[PowerBiDataTransformer::normalizeSalesforceId($campaignId)] ?? null;
+
+                $campaigns[] = [
+                    'campaign_id' => $campaignId,
+                    'campaign_name' => $campaignName,
+                    'business_unit' => (string) ($engagement['business_unit'] ?? ''),
+                    'start_date' => (string) ($engagement['start_date'] ?? ($row['[first_send]'] ?? '')),
+                ];
+            }
+
+            return $campaigns;
+        });
+    }
+
+    /**
+     * Every campaign that appears in '(raw) Engagement', whether or not it was
+     * ever emailed.
+     *
+     * This is the full universe (~222 campaigns) and is NOT the campaign
+     * catalogue the pages offer — see getUniqueCampaigns() for that. It exists
+     * so the coverage report can measure the two lists against each other, and
+     * so the catalogue can borrow each campaign's business unit and start date.
+     *
+     * @return array<int, array{campaign_id: string, campaign_name: string, business_unit: string, start_date: string}>
+     */
+    public function getEngagementCampaigns(): array
     {
         // Use fake data if credentials are not configured
         if (! $this->hasCredentials()) {
             return FakePowerBiData::getUniqueCampaigns();
         }
 
-        return Cache::remember('powerbi_campaigns', $this->cacheTtl(), function () {
+        return Cache::remember('powerbi_engagement_campaigns', $this->cacheTtl(), function () {
             $token = $this->getAccessToken();
             $url = $this->buildExecuteQueriesUrl();
 
@@ -241,16 +365,24 @@ class PowerBiService
                 throw new \Exception('Failed to fetch unique campaigns: '.$response->status());
             }
 
-            $rows = $this->parsePowerBiResponse($response->json());
+            $campaigns = [];
 
-            return array_map(function ($row) {
-                return [
+            foreach ($this->parsePowerBiResponse($response->json()) as $row) {
+                $campaignName = (string) ($row['(raw) Engagement[Campaign Name]'] ?? '');
+
+                if ($this->isExcludedCampaign($campaignName)) {
+                    continue;
+                }
+
+                $campaigns[] = [
                     'campaign_id' => $row['(raw) Engagement[Campaign ID]'] ?? '',
-                    'campaign_name' => $row['(raw) Engagement[Campaign Name]'] ?? '',
+                    'campaign_name' => $campaignName,
                     'business_unit' => $row['(raw) Engagement[Reporting Business Unit]'] ?? '',
                     'start_date' => $row['(raw) Engagement[Start Date]'] ?? '',
                 ];
-            }, $rows);
+            }
+
+            return $campaigns;
         });
     }
 
@@ -496,6 +628,189 @@ class PowerBiService
                 ],
                 'leads' => $leads,
             ];
+        });
+    }
+
+    /**
+     * Member statuses that only a delivered email can produce.
+     *
+     * "Enviado" is the Spanish spelling of "Sent" that part of the org writes.
+     * Everything else in the column — Registered, Attended, Form Submission,
+     * Engaged document/video — comes from events or content, not from a send.
+     */
+    private const EMAIL_MEMBER_STATUSES = ['sent', 'enviado', 'opened', 'clicked'];
+
+    /**
+     * Per-campaign engagement footprint: how many members it touched, and
+     * whether any of them got there through an email.
+     *
+     * @return array<string, array{members: int, email_activity: bool}>  Keyed by 15-character campaign ID
+     */
+    public function getEngagementFootprint(): array
+    {
+        return Cache::remember('powerbi_engagement_footprint', $this->cacheTtl(), function () {
+            $token = $this->getAccessToken();
+            $url = $this->buildExecuteQueriesUrl();
+
+            $dax = <<<'DAX'
+                EVALUATE
+                SUMMARIZECOLUMNS(
+                    '(raw) Engagement'[Campaign ID],
+                    '(raw) Engagement'[Member Status],
+                    "members", COUNTROWS('(raw) Engagement')
+                )
+                DAX;
+
+            $response = Http::withToken($token)->post($url, [
+                'queries' => [['query' => $dax]],
+                'serializerSettings' => ['includeNulls' => true],
+            ]);
+
+            if ($response->failed()) {
+                Log::error('Failed to fetch engagement footprint from Power BI', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
+                throw new \Exception('Failed to fetch engagement footprint: '.$response->status());
+            }
+
+            $footprint = [];
+
+            foreach ($this->parsePowerBiResponse($response->json()) as $row) {
+                $key = PowerBiDataTransformer::normalizeSalesforceId(
+                    (string) ($row['(raw) Engagement[Campaign ID]'] ?? '')
+                );
+
+                if ($key === '') {
+                    continue;
+                }
+
+                $status = strtolower(trim((string) ($row['(raw) Engagement[Member Status]'] ?? '')));
+                $members = (int) ($row['[members]'] ?? 0);
+
+                $footprint[$key] ??= ['members' => 0, 'email_activity' => false];
+                $footprint[$key]['members'] += $members;
+
+                if (in_array($status, self::EMAIL_MEMBER_STATUSES, true)) {
+                    $footprint[$key]['email_activity'] = true;
+                }
+            }
+
+            return $footprint;
+        });
+    }
+
+    /**
+     * Report which campaigns have rows in '(raw) Email Campaign Metrics'.
+     *
+     * '(raw) Email Campaign Metrics' is the universe of email campaigns and the
+     * catalogue the pages offer; '(raw) Engagement' is the member-level record of
+     * who those campaigns reached. A campaign present only in engagement is
+     * therefore one of two things, and the report tells them apart:
+     *
+     *   - it shows email activity (Sent/Opened/Clicked), so it WAS emailed and
+     *     its send report is missing from the email report; or
+     *   - it shows only Registered/Attended/Form Submission, so it is an event
+     *     or content campaign that was never emailed and correctly has no row.
+     *
+     * The two tables disagree on ID form — '(raw) Engagement' stores 18-character
+     * IDs and '(raw) Email Campaign Metrics' 15-character ones — so both sides
+     * are normalized to 15 before matching.
+     *
+     * @return array<int, array{campaign_id: string, campaign_name: string, business_unit: string, start_date: string, email_rows: int, engagement_members: int, email_activity: bool, in_catalogue: bool}>
+     */
+    public function getEmailMetricsCoverage(): array
+    {
+        return Cache::remember('powerbi_email_metrics_coverage', $this->cacheTtl(), function () {
+            $token = $this->getAccessToken();
+            $url = $this->buildExecuteQueriesUrl();
+
+            $dax = <<<'DAX'
+                EVALUATE
+                SUMMARIZECOLUMNS(
+                    '(raw) Email Campaign Metrics'[Campaign ID],
+                    "email_rows", COUNTROWS('(raw) Email Campaign Metrics')
+                )
+                DAX;
+
+            $response = Http::withToken($token)->post($url, [
+                'queries' => [['query' => $dax]],
+                'serializerSettings' => ['includeNulls' => true],
+            ]);
+
+            if ($response->failed()) {
+                Log::error('Failed to fetch email metrics coverage from Power BI', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
+                throw new \Exception('Failed to fetch email metrics coverage: '.$response->status());
+            }
+
+            $rowsByCampaign = [];
+
+            foreach ($this->parsePowerBiResponse($response->json()) as $row) {
+                $key = PowerBiDataTransformer::normalizeSalesforceId(
+                    (string) ($row['(raw) Email Campaign Metrics[Campaign ID]'] ?? '')
+                );
+
+                if ($key === '') {
+                    continue;
+                }
+
+                $rowsByCampaign[$key] = (int) ($row['[email_rows]'] ?? 0);
+            }
+
+            $footprint = $this->getEngagementFootprint();
+            $coverage = [];
+            $seen = [];
+
+            // The catalogue first: these are the campaigns the pages can offer.
+            foreach ($this->getUniqueCampaigns() as $campaign) {
+                $campaignId = (string) ($campaign['campaign_id'] ?? '');
+                $key = PowerBiDataTransformer::normalizeSalesforceId($campaignId);
+
+                if ($key === '') {
+                    continue;
+                }
+
+                $seen[$key] = true;
+
+                $coverage[] = [
+                    'campaign_id' => $campaignId,
+                    'campaign_name' => (string) ($campaign['campaign_name'] ?? ''),
+                    'business_unit' => (string) ($campaign['business_unit'] ?? ''),
+                    'start_date' => (string) ($campaign['start_date'] ?? ''),
+                    'email_rows' => $rowsByCampaign[$key] ?? 0,
+                    'engagement_members' => $footprint[$key]['members'] ?? 0,
+                    'email_activity' => $footprint[$key]['email_activity'] ?? false,
+                    'in_catalogue' => true,
+                ];
+            }
+
+            // Then everything engagement knows about that the email report does not.
+            foreach ($this->getEngagementCampaigns() as $campaign) {
+                $campaignId = (string) ($campaign['campaign_id'] ?? '');
+                $key = PowerBiDataTransformer::normalizeSalesforceId($campaignId);
+
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+
+                $coverage[] = [
+                    'campaign_id' => $campaignId,
+                    'campaign_name' => (string) ($campaign['campaign_name'] ?? ''),
+                    'business_unit' => (string) ($campaign['business_unit'] ?? ''),
+                    'start_date' => (string) ($campaign['start_date'] ?? ''),
+                    'email_rows' => 0,
+                    'engagement_members' => $footprint[$key]['members'] ?? 0,
+                    'email_activity' => $footprint[$key]['email_activity'] ?? false,
+                    'in_catalogue' => false,
+                ];
+            }
+
+            return $coverage;
         });
     }
 

@@ -202,8 +202,8 @@ export function LeadSourceCard({ slices, total }: { slices: SourceSlice[]; total
                         No hay leads en el filtro actual
                     </div>
                 ) : (
-                    <div className="flex flex-wrap items-center gap-6">
-                        <div className="relative shrink-0">
+                    <div className="flex flex-wrap items-center justify-center gap-6">
+                        <div className="relative shrink-0 mx-auto">
                             <svg viewBox="0 0 160 160" className="h-40 w-40" role="img" aria-label="Distribución de leads por fuente">
                                 <g transform="rotate(-90 80 80)">
                                     {arcs.map((arc, i) => (

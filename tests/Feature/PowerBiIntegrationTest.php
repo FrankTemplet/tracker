@@ -44,7 +44,7 @@ class PowerBiIntegrationTest extends TestCase
         });
     }
 
-    public function test_unique_campaigns_are_fetched_from_execute_queries_endpoint(): void
+    public function test_engagement_campaigns_are_fetched_from_execute_queries_endpoint(): void
     {
         Http::fake([
             'login.microsoftonline.com/*' => Http::response([
@@ -70,7 +70,9 @@ class PowerBiIntegrationTest extends TestCase
             ]),
         ]);
 
-        $campaigns = $this->service->getUniqueCampaigns();
+        // This payload is the engagement universe. The selector's catalogue comes
+        // from '(raw) Email Campaign Metrics' instead — see getUniqueCampaigns().
+        $campaigns = $this->service->getEngagementCampaigns();
 
         $this->assertCount(1, $campaigns);
         $this->assertEquals('701Pl00000hB2yb', $campaigns[0]['campaign_id']);
