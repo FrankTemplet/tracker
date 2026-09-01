@@ -578,11 +578,20 @@ class PowerBiService
                 $createdAlias = $row['(raw) Lead v2[Created Alias]'] ?? '';
                 $stage = $row['(raw) Lead v2[Lead Stage]'] ?? '';
 
-                if ($createdBy === 'Sales Outcomes Lead Triage') {
+                // Both counters key off [Created Alias] only. [Created By] holds the
+                // same user's display name, which Salesforce admins can rename at any
+                // time — matching on it made the count silently drop to zero. The two
+                // aliases are distinct creators and never overlap:
+                //   LeadTrge  -> the Sales Outcomes Lead Triage user (leads created)
+                //   b2bmausr  -> the B2B marketing automation user (leads assigned)
+                // So "created" and "assigned" are disjoint subsets of the total, not
+                // nested ones, and their sum is still <= total because other creators
+                // (manual entry, imports) fall outside both.
+                if ($createdAlias === 'LeadTrge') {
                     $leadsCreated++;
                 }
 
-                if ($createdAlias === 'b2bmausr' || $createdAlias === 'LeadTrge') {
+                if ($createdAlias === 'b2bmausr') {
                     $leadsAssigned++;
                 }
 

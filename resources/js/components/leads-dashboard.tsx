@@ -1,6 +1,7 @@
 import { TrendingUp, BarChart3, Target, ChevronLeft, ChevronRight, Filter, Search, User, Users, Clock, ArrowRightLeft, Tag, Activity, Hourglass } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
+import { DateRangePicker } from '@/components/date-range-picker';
 import { LeadAgingCard, LeadFunnelCard, LeadSourceCard } from '@/components/leads-analytics';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -261,11 +262,24 @@ function customRangeLabel(range: CustomRange): string {
 // Card drill-down helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Split the leads behind a stat card.
+ *
+ * "Created" and "assigned" are both keyed off `created_alias` only. The
+ * `created_by` column holds the same user's display name, which Salesforce
+ * admins can rename at any time — matching on it made the count silently drop
+ * to zero. The two aliases are distinct creators and never overlap:
+ *   LeadTrge -> the Sales Outcomes Lead Triage user (leads created)
+ *   b2bmausr -> the B2B marketing automation user (leads assigned)
+ * So the two cards are disjoint subsets of the total, not nested ones, and
+ * their sum is still <= total: other creators (manual entry, imports) fall
+ * outside both. Keep this in sync with the same split in PowerBiService.
+ */
 function getLeadsByCard(leads: Lead[], card: CardKey): Lead[] {
     switch (card) {
         case 'total': return leads;
-        case 'leads_created': return leads.filter(l => l.created_by === 'Sales Outcomes Lead Triage');
-        case 'leads_assigned': return leads.filter(l => l.created_alias === 'b2bmausr' || l.created_alias === 'LeadTrge');
+        case 'leads_created': return leads.filter(l => l.created_alias === 'LeadTrge');
+        case 'leads_assigned': return leads.filter(l => l.created_alias === 'b2bmausr');
         case 'mqls': return leads.filter(l => l.lead_stage === 'MQL');
         case 'sqls': return leads.filter(l => l.lead_stage === 'SQL');
     }
@@ -907,32 +921,16 @@ function LeadsTable({ leads, onSelectLead }: { leads: Lead[]; onSelectLead: (lea
                             </SelectContent>
                         </Select>
 
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">Created</span>
-                            <Input
-                                type="date"
-                                aria-label="Created from"
-                                value={createdRange.from}
-                                max={createdRange.to || undefined}
-                                onChange={e => {
-                                    setCreatedRange(r => ({ ...r, from: e.target.value }));
-                                    resetPage();
-                                }}
-                                className="h-8 w-[9.5rem] text-xs"
-                            />
-                            <span className="text-xs text-muted-foreground">to</span>
-                            <Input
-                                type="date"
-                                aria-label="Created to"
-                                value={createdRange.to}
-                                min={createdRange.from || undefined}
-                                onChange={e => {
-                                    setCreatedRange(r => ({ ...r, to: e.target.value }));
-                                    resetPage();
-                                }}
-                                className="h-8 w-[9.5rem] text-xs"
-                            />
-                        </div>
+                        <DateRangePicker
+                            value={createdRange}
+                            ariaLabel="Created date range"
+                            placeholder="Created date"
+                            className="w-56"
+                            onChange={range => {
+                                setCreatedRange(range);
+                                resetPage();
+                            }}
+                        />
 
                         {tableFiltered && (
                             <Button
@@ -1099,25 +1097,13 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
                     </SelectContent>
                 </Select>
                 {periodFilter === 'custom' && (
-                    <div className="flex items-center gap-2">
-                        <Input
-                            type="date"
-                            aria-label="Range start"
-                            value={customRange.from}
-                            max={customRange.to || undefined}
-                            onChange={e => setCustomRange(r => ({ ...r, from: e.target.value }))}
-                            className="h-8 w-[9.5rem] text-xs"
-                        />
-                        <span className="text-xs text-muted-foreground">to</span>
-                        <Input
-                            type="date"
-                            aria-label="Range end"
-                            value={customRange.to}
-                            min={customRange.from || undefined}
-                            onChange={e => setCustomRange(r => ({ ...r, to: e.target.value }))}
-                            className="h-8 w-[9.5rem] text-xs"
-                        />
-                    </div>
+                    <DateRangePicker
+                        value={customRange}
+                        ariaLabel="Custom period range"
+                        placeholder="Pick a date range"
+                        className="w-60"
+                        onChange={setCustomRange}
+                    />
                 )}
                 {hasActiveFilters && (
                     <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground"
