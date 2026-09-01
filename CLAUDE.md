@@ -1,3 +1,17 @@
+## Language: English only
+
+All code and all product output is in **English** — always, with no exceptions
+unless the user explicitly asks for another language in a specific place.
+
+This covers: UI copy, labels, headings, tooltips, empty states, aria-labels,
+chart legends and category labels (e.g. "Other", "No source"), error and
+validation messages, page titles and breadcrumbs, code comments, commit
+messages, variable/function/class names, and test descriptions.
+
+No Spanglish and no mixed-language sentences. If you find Spanish text while
+working in a file, translate it as part of the change. Chat replies to the user
+follow the user's language; the repo does not.
+
 ## Domain traps (read before writing code — these are not visible in the files)
 
 These are hard-won gotchas specific to this repo. Each one is a bug that already

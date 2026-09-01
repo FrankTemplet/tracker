@@ -52,6 +52,13 @@ export interface EmailCampaignMetric {
     hard_bounces: number;
     delivery_rate: number;
     segment: string | null;
+    /**
+     * Whether the recipient log holds rows for this send.
+     *
+     * `null` when the coverage list could not be read, in which case the
+     * drill-down stays offered rather than being hidden on a transient failure.
+     */
+    has_recipients?: boolean | null;
 }
 
 export type MetricDrilldownKey =

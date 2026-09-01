@@ -94,7 +94,10 @@ export function CampaignDashboard({
 
     const handleClear = () => {
         setIsLoading(true);
-        router.get(currentRoute(), {}, { onFinish: () => setIsLoading(false) });
+        // `clear` tells the backend this empty query string is deliberate, so it
+        // does not helpfully fill the filters back in with the defaults a first
+        // visit gets.
+        router.get(currentRoute(), { clear: 1 }, { onFinish: () => setIsLoading(false) });
     };
 
     const filtersSelected = selectedRegion && selectedYear;

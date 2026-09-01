@@ -9,7 +9,7 @@ import type { AgingBucket, AgingSummary, AgingTrendPoint, LeadFunnel, SourceSlic
  * Categorical slots, assigned in fixed order and never cycled.
  *
  * A source keeps its slot for as long as it stays in the top six, so changing a
- * filter cannot repaint the surviving slices. The tail folds into "Otros" rather
+ * filter cannot repaint the surviving slices. The tail folds into "Other" rather
  * than generating a ninth hue.
  */
 const SOURCE_COLORS = [
@@ -49,7 +49,7 @@ function InfoHint({ children }: { children: React.ReactNode }) {
         <TooltipProvider delayDuration={150}>
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <button type="button" aria-label="Cómo se calcula" className="text-muted-foreground hover:text-foreground transition-colors">
+                    <button type="button" aria-label="How this is calculated" className="text-muted-foreground hover:text-foreground transition-colors">
                         <Info className="h-4 w-4" />
                     </button>
                 </TooltipTrigger>
@@ -102,10 +102,10 @@ export function LeadFunnelCard({ funnel }: { funnel: LeadFunnel }) {
         <Card className="h-full">
             <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                    <CardTitle className="text-base font-semibold">Funnel de Leads</CardTitle>
+                    <CardTitle className="text-base font-semibold">Lead Funnel</CardTitle>
                     <InfoHint>
-                        Solo Disqualified resta: un lead reasignado sigue siendo un lead procesado, así que se reporta
-                        como anotación y no como segunda fuga. Porcentajes sobre Request Received.
+                        Only Disqualified subtracts: a reassigned lead is still a processed lead, so it is reported
+                        as an annotation rather than a second drop-off. Percentages are over Request Received.
                     </InfoHint>
                 </div>
             </CardHeader>
@@ -117,16 +117,16 @@ export function LeadFunnelCard({ funnel }: { funnel: LeadFunnel }) {
                     share={funnel.disqualifiedShare}
                     color="var(--viz-danger)"
                     branch
-                    hint="Stage o Status: Disqualified, Rejected o Recycled"
+                    hint="Stage or Status: Disqualified, Rejected or Recycled"
                 />
                 <FunnelBar label="Processed" value={funnel.processed} share={funnel.processedShare} color={RAMP[3]} />
                 <FunnelBar
-                    label="Reasignados"
+                    label="Reassigned"
                     value={funnel.reassigned}
                     share={funnel.reassignedShare}
                     color="var(--viz-unknown)"
                     branch
-                    hint="Procesados que cambiaron de dueño al menos una vez"
+                    hint="Processed leads whose owner changed at least once"
                 />
 
                 {/* Converted is intentionally unmeasured: '(raw) Oppty' carries no
@@ -136,11 +136,11 @@ export function LeadFunnelCard({ funnel }: { funnel: LeadFunnel }) {
                 <div>
                     <div className="flex items-baseline justify-between gap-3 mb-1">
                         <span className="text-xs font-semibold text-muted-foreground">Converted</span>
-                        <span className="shrink-0 text-xs text-muted-foreground">Sin dato</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">No data</span>
                     </div>
                     <div className="w-full h-4 rounded-[4px] border border-dashed" />
                     <p className="text-xs text-muted-foreground mt-1">
-                        Pendiente: <code className="text-[11px]">(raw) Oppty</code> no expone el lead que la originó.
+                        Pending: <code className="text-[11px]">(raw) Oppty</code> does not expose the lead that originated it.
                     </p>
                 </div>
             </CardContent>
@@ -191,20 +191,20 @@ export function LeadSourceCard({ slices, total }: { slices: SourceSlice[]; total
                 <div className="flex items-center justify-between">
                     <CardTitle className="text-base font-semibold">Lead Source</CardTitle>
                     <InfoHint>
-                        La mayoría de los leads llega sin Lead Source registrado en Salesforce; esos se agrupan como
-                        &ldquo;Sin fuente&rdquo; en gris. Del séptimo lugar en adelante se agrupan en &ldquo;Otros&rdquo;.
+                        Most leads arrive with no Lead Source recorded in Salesforce; those are grouped as
+                        &ldquo;No source&rdquo; in grey. From seventh place onwards they are grouped into &ldquo;Other&rdquo;.
                     </InfoHint>
                 </div>
             </CardHeader>
             <CardContent>
                 {total === 0 ? (
                     <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground italic">
-                        No hay leads en el filtro actual
+                        No leads in the current filter
                     </div>
                 ) : (
                     <div className="flex flex-wrap items-center justify-center gap-6">
                         <div className="relative shrink-0 mx-auto">
-                            <svg viewBox="0 0 160 160" className="h-40 w-40" role="img" aria-label="Distribución de leads por fuente">
+                            <svg viewBox="0 0 160 160" className="h-40 w-40" role="img" aria-label="Lead distribution by source">
                                 <g transform="rotate(-90 80 80)">
                                     {arcs.map((arc, i) => (
                                         <circle
@@ -292,8 +292,8 @@ function Sparkline({ points, metric, color, label }: SparklineProps) {
 
     if (plotted.length < 2) {
         return (
-            <div className="h-14 flex items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground italic">
-                Sin historial suficiente
+            <div className="h-20 flex items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground italic">
+                Not enough history
             </div>
         );
     }
@@ -321,12 +321,15 @@ function Sparkline({ points, metric, color, label }: SparklineProps) {
 
     return (
         <div className="relative">
+            <div className="flex justify-end text-[10px] text-muted-foreground">
+                peak {formatDays(max)} d
+            </div>
             <svg
                 viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
-                className="w-full h-14"
+                className="w-full h-20"
                 preserveAspectRatio="none"
                 role="img"
-                aria-label={`${label}: tendencia por semana de creación`}
+                aria-label={`${label}: trend by creation week`}
                 onMouseMove={handleMove}
                 onMouseLeave={() => setHovered(null)}
             >
@@ -409,21 +412,48 @@ function BucketBars({ buckets }: { buckets: AgingBucket[] }) {
     );
 }
 
+/** Micro-heading over a chart, with the sentence that says how to read it. */
+function ChartCaption({ heading, children }: { heading: string; children: React.ReactNode }) {
+    return (
+        <div className="mb-1.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{heading}</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">{children}</p>
+        </div>
+    );
+}
+
 interface AgingMetricBlockProps {
     title: string;
     average: number | null;
     subtitle: string;
+    /** What the metric measures, in one sentence. */
+    description: string;
+    /** How to read the weekly trend for this metric specifically. */
+    trendCaption: string;
+    /** How to read the bucket distribution for this metric specifically. */
+    bucketCaption: string;
     color: string;
     metric: 'ageDays' | 'firstTouchDays';
     trend: AgingTrendPoint[];
     buckets: AgingBucket[];
 }
 
-function AgingMetricBlock({ title, average, subtitle, color, metric, trend, buckets }: AgingMetricBlockProps) {
+function AgingMetricBlock({
+    title,
+    average,
+    subtitle,
+    description,
+    trendCaption,
+    bucketCaption,
+    color,
+    metric,
+    trend,
+    buckets,
+}: AgingMetricBlockProps) {
     const severity = agingSeverity(average === null ? null : average * 24);
 
     return (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
             <div className="flex items-baseline justify-between gap-3">
                 <div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
@@ -432,12 +462,22 @@ function AgingMetricBlock({ title, average, subtitle, color, metric, trend, buck
                 <div className="shrink-0 text-right">
                     <p className={`text-2xl font-bold tabular-nums ${AGING_TEXT_CLASS[severity]}`}>{formatDays(average)}</p>
                     <p className="text-xs text-muted-foreground">
-                        días · {formatDuration(average === null ? null : average * 24)}
+                        days · {formatDuration(average === null ? null : average * 24)}
                     </p>
                 </div>
             </div>
-            <Sparkline points={trend} metric={metric} color={color} label={title} />
-            <BucketBars buckets={buckets} />
+
+            <p className="text-xs text-muted-foreground leading-relaxed max-w-3xl">{description}</p>
+
+            <div>
+                <ChartCaption heading="Weekly trend">{trendCaption}</ChartCaption>
+                <Sparkline points={trend} metric={metric} color={color} label={title} />
+            </div>
+
+            <div>
+                <ChartCaption heading="Distribution">{bucketCaption}</ChartCaption>
+                <BucketBars buckets={buckets} />
+            </div>
         </div>
     );
 }
@@ -447,52 +487,67 @@ export function LeadAgingCard({ aging }: { aging: AgingSummary }) {
         <Card className="h-full">
             <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                    <CardTitle className="text-base font-semibold">Aging de Leads</CardTitle>
+                    <CardTitle className="text-base font-semibold">Lead Aging</CardTitle>
                     <InfoHint>
-                        El primer toque es el primer cambio de dueño registrado en el historial del lead. Create Date no
-                        trae hora, así que las duraciones medidas desde ahí tienen precisión de un día. La tendencia
-                        agrupa por semana de creación, por lo que la edad sube en las cohortes más viejas por definición.
+                        First touch is the first owner change recorded in the lead history. Create Date carries no
+                        time of day, so durations measured from it are accurate to within a day. The trend groups by
+                        creation week, so age rises in older cohorts by definition.
                     </InfoHint>
                 </div>
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
                 {aging.measured === 0 ? (
                     <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground italic">
-                        Ningún lead del filtro actual trae fecha de creación
+                        No lead in the current filter has a creation date
                     </div>
                 ) : (
                     <>
-                        <div className="grid gap-6 lg:grid-cols-2">
-                            <AgingMetricBlock
-                                title="Tiempo desde creación"
-                                subtitle={`${aging.measured.toLocaleString()} leads medidos`}
-                                average={aging.avgAgeDays}
-                                color="var(--viz-cat-1)"
-                                metric="ageDays"
-                                trend={aging.trend}
-                                buckets={aging.ageBuckets}
-                            />
-                            <AgingMetricBlock
-                                title="Tiempo hasta primer toque"
-                                subtitle={`${aging.touched.toLocaleString()} leads con al menos un toque`}
-                                average={aging.avgFirstTouchDays}
-                                color="var(--viz-cat-3)"
-                                metric="firstTouchDays"
-                                trend={aging.trend}
-                                buckets={aging.firstTouchBuckets}
-                            />
+                        <div className="flex flex-col divide-y">
+                            <div className="pb-8">
+                                <AgingMetricBlock
+                                    title="Time since creation"
+                                    subtitle={`${aging.measured.toLocaleString()} leads measured`}
+                                    description="How long each lead has existed, from its Create Date to today. It keeps growing while the lead stays in the system, so it reads as backlog age rather than as response speed."
+                                    trendCaption="Each point is one creation week, plotted with the average age of the leads created that week. Older weeks sit higher because they have had more time to age, so read the shape of the line rather than its slope."
+                                    bucketCaption="How the same leads spread across age ranges. A heavy tail on +30d means old leads are still sitting in the system."
+                                    average={aging.avgAgeDays}
+                                    color="var(--viz-cat-1)"
+                                    metric="ageDays"
+                                    trend={aging.trend}
+                                    buckets={aging.ageBuckets}
+                                />
+                            </div>
+                            <div className="pt-8">
+                                <AgingMetricBlock
+                                    title="Time to first touch"
+                                    subtitle={`${aging.touched.toLocaleString()} leads with at least one touch`}
+                                    description="How long a lead waited before anyone worked it — from its Create Date to the first owner change in the lead history. Leads nobody ever touched carry no wait, so they are excluded here and counted on their own below."
+                                    trendCaption="Each point is one creation week, plotted with the average wait of the leads created that week. Unlike age, this one is comparable across weeks: lower is faster attention."
+                                    bucketCaption="How the same waits spread across ranges. Weight on 0–1d means leads are picked up the day they arrive."
+                                    average={aging.avgFirstTouchDays}
+                                    color="var(--viz-cat-3)"
+                                    metric="firstTouchDays"
+                                    trend={aging.trend}
+                                    buckets={aging.firstTouchBuckets}
+                                />
+                            </div>
                         </div>
 
                         <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
-                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                Nunca tocados
+                            <span className="flex flex-col">
+                                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                    Never touched
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                    Leads with no owner change on record — nobody has worked them yet
+                                </span>
                             </span>
                             <span className="text-sm">
                                 <span className={`font-bold tabular-nums ${AGING_TEXT_CLASS[aging.untouchedShare > 50 ? 'late' : aging.untouchedShare > 25 ? 'warn' : 'ok']}`}>
                                     {aging.untouched.toLocaleString()}
                                 </span>
                                 <span className="text-muted-foreground ml-1.5">
-                                    de {aging.measured.toLocaleString()} ({formatPercent(aging.untouchedShare)})
+                                    of {aging.measured.toLocaleString()} ({formatPercent(aging.untouchedShare)})
                                 </span>
                             </span>
                         </div>

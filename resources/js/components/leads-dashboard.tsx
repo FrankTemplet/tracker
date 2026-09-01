@@ -1,11 +1,12 @@
-import { useState, useMemo, useEffect } from 'react';
-import { TrendingUp, BarChart3, Target, ChevronLeft, ChevronRight, Filter, User, Users, Clock, ArrowRightLeft, Tag, Activity, Hourglass } from 'lucide-react';
-import { LeadAgingCard, LeadFunnelCard, LeadSourceCard } from '@/components/leads-analytics';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { TrendingUp, BarChart3, Target, ChevronLeft, ChevronRight, Filter, Search, User, Users, Clock, ArrowRightLeft, Tag, Activity, Hourglass } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { LeadAgingCard, LeadFunnelCard, LeadSourceCard } from '@/components/leads-analytics';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatDuration, agingSeverity, AGING_TEXT_CLASS, AGING_BADGE_CLASS } from '@/lib/format-duration';
 import { buildAgingSummary, buildFunnel, buildSourceBreakdown, parseLeadDate } from '@/lib/lead-analytics';
 
@@ -120,23 +121,140 @@ const PERIOD_OPTIONS = [
     { value: 'last_6_months', label: 'Last 6 months' },
     { value: 'this_year', label: 'This year' },
     { value: 'last_year', label: 'Last year' },
+    { value: 'custom', label: 'Custom range' },
 ];
 
-function filterByPeriod(leads: Lead[], period: string): Lead[] {
-    if (period === 'all') return leads;
+/** Both ends are optional, so a half-open range filters on the end that is set. */
+export interface CustomRange {
+    from: string;
+    to: string;
+}
+
+const EMPTY_RANGE: CustomRange = { from: '', to: '' };
+
+/**
+ * Parse a native date input value ('YYYY-MM-DD') as local midnight.
+ *
+ * `new Date('2025-01-31')` would parse as UTC and shift a day west of Greenwich;
+ * parseLeadDate builds local dates, so both sides have to agree or the range
+ * ends up off by one.
+ */
+function parseInputDate(value: string): Date | null {
+    if (!value) {
+        return null;
+    }
+
+    const [y, m, d] = value.split('-').map(Number);
+
+    if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
+        return null;
+    }
+
+    return new Date(y, m - 1, d);
+}
+
+/** Both bounds are inclusive: lead dates carry no time, so they sit on midnight too. */
+function inCustomRange(d: Date, range: CustomRange): boolean {
+    const from = parseInputDate(range.from);
+    const to = parseInputDate(range.to);
+
+    if (from && d < from) {
+        return false;
+    }
+
+    if (to && d > to) {
+        return false;
+    }
+
+    return true;
+}
+
+function filterByPeriod(leads: Lead[], period: string, range: CustomRange = EMPTY_RANGE): Lead[] {
+    if (period === 'all') {
+        return leads;
+    }
+
+    // An empty custom range restricts nothing, so the page keeps showing every
+    // lead while the user is still picking the two dates.
+    if (period === 'custom' && !range.from && !range.to) {
+        return leads;
+    }
+
     const now = new Date();
     const thisYear = now.getFullYear();
     const thisMonth = now.getMonth();
+
     return leads.filter(lead => {
         const d = parseLeadDate(lead.created_date);
-        if (!d) return false;
-        if (period === 'this_month') return d.getFullYear() === thisYear && d.getMonth() === thisMonth;
-        if (period === 'last_3_months') { const c = new Date(now); c.setMonth(c.getMonth() - 3); return d >= c; }
-        if (period === 'last_6_months') { const c = new Date(now); c.setMonth(c.getMonth() - 6); return d >= c; }
-        if (period === 'this_year') return d.getFullYear() === thisYear;
-        if (period === 'last_year') return d.getFullYear() === thisYear - 1;
+
+        if (!d) {
+            return false;
+        }
+
+        if (period === 'this_month') {
+            return d.getFullYear() === thisYear && d.getMonth() === thisMonth;
+        }
+
+        if (period === 'last_3_months') {
+            const cutoff = new Date(now);
+
+            cutoff.setMonth(cutoff.getMonth() - 3);
+
+            return d >= cutoff;
+        }
+
+        if (period === 'last_6_months') {
+            const cutoff = new Date(now);
+
+            cutoff.setMonth(cutoff.getMonth() - 6);
+
+            return d >= cutoff;
+        }
+
+        if (period === 'this_year') {
+            return d.getFullYear() === thisYear;
+        }
+
+        if (period === 'last_year') {
+            return d.getFullYear() === thisYear - 1;
+        }
+
+        if (period === 'custom') {
+            return inCustomRange(d, range);
+        }
+
         return true;
     });
+}
+
+/** 'Mar 3, 2025' — same short form the lead table uses. */
+function formatRangeBound(value: string): string {
+    const parsed = parseInputDate(value);
+
+    if (!parsed) {
+        return '';
+    }
+
+    return parsed.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function customRangeLabel(range: CustomRange): string {
+    const from = formatRangeBound(range.from);
+    const to = formatRangeBound(range.to);
+
+    if (from && to) {
+        return `${from} – ${to}`;
+    }
+
+    if (from) {
+        return `From ${from}`;
+    }
+
+    if (to) {
+        return `Until ${to}`;
+    }
+
+    return 'Custom range';
 }
 
 // ---------------------------------------------------------------------------
@@ -379,19 +497,34 @@ function ReassignmentTimeline({ events, loading, error }: { events: LeadHistoryE
     );
 }
 
+const STAGE_COLORS: Record<string, string> = {
+    MQL: 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-800',
+    SQL: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800',
+};
+
+/** Stages outside the map (Inquiry, Nurture, …) fall back to a neutral badge. */
+function stageBadgeClass(stage: string): string {
+    return STAGE_COLORS[stage] ?? 'bg-muted text-muted-foreground';
+}
+
 function LeadDetailModal({ lead, open, onClose }: { lead: Lead | null; open: boolean; onClose: () => void }) {
     const { aging, events, loading, error } = useLeadHistory(lead?.lead_id ?? null, open && !!lead);
 
-    if (!lead) return null;
+    if (!lead) {
+        return null;
+    }
 
-    const stageColors: Record<string, string> = {
-        MQL: 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-800',
-        SQL: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800',
-    };
-    const stageBadge = lead.lead_stage ? (stageColors[lead.lead_stage] ?? 'bg-muted text-muted-foreground') : null;
+    const stageBadge = lead.lead_stage ? stageBadgeClass(lead.lead_stage) : null;
 
     return (
-        <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+        <Dialog
+            open={open}
+            onOpenChange={o => {
+                if (!o) {
+                    onClose();
+                }
+            }}
+        >
             <DialogContent className="w-[520px] !max-w-none max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden">
                 {/* Header */}
                 <div className="px-6 pt-6 pb-4 border-b">
@@ -505,7 +638,7 @@ function LeadRows({ leads, onSelect }: { leads: Lead[]; onSelect: (lead: Lead) =
         <>
             {leads.length === 0 ? (
                 <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground text-sm">
+                    <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground text-sm">
                         No leads found
                     </td>
                 </tr>
@@ -517,6 +650,15 @@ function LeadRows({ leads, onSelect }: { leads: Lead[]; onSelect: (lead: Lead) =
                         className="border-b last:border-0 hover:bg-muted/30 transition-colors cursor-pointer"
                     >
                         <td className="px-4 py-3 font-medium">{lead.name}</td>
+                        <td className="px-4 py-3">
+                            {lead.lead_stage ? (
+                                <span className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-medium ${stageBadgeClass(lead.lead_stage)}`}>
+                                    {lead.lead_stage}
+                                </span>
+                            ) : (
+                                <span className="text-muted-foreground">—</span>
+                            )}
+                        </td>
                         <td className="px-4 py-3 text-muted-foreground">{lead.email}</td>
                         <td className="px-4 py-3 text-muted-foreground">{lead.company}</td>
                         <td className="px-4 py-3 text-muted-foreground">{lead.owner}</td>
@@ -529,7 +671,71 @@ function LeadRows({ leads, onSelect }: { leads: Lead[]; onSelect: (lead: Lead) =
     );
 }
 
-const TABLE_HEADERS = ['Name', 'Email', 'Company / Account', 'Owner', 'Country', 'Create Date'];
+const TABLE_HEADERS = ['Name', 'Stage', 'Email', 'Company / Account', 'Owner', 'Country', 'Create Date'];
+
+// ---------------------------------------------------------------------------
+// Table search and filters
+// ---------------------------------------------------------------------------
+
+type SearchField = 'all' | 'name' | 'email' | 'company';
+
+const SEARCH_FIELDS: { value: SearchField; label: string }[] = [
+    { value: 'all', label: 'All fields' },
+    { value: 'name', label: 'Name' },
+    { value: 'email', label: 'Email' },
+    { value: 'company', label: 'Company' },
+];
+
+/** Stage value standing in for leads whose Lead Stage is blank in the export. */
+const NO_STAGE = '__none__';
+
+function matchesSearch(lead: Lead, term: string, field: SearchField): boolean {
+    const needle = term.trim().toLowerCase();
+
+    if (!needle) {
+        return true;
+    }
+
+    // 'all' also covers Owner, which is not offered as its own scope because
+    // the owner column is short enough to scan by eye.
+    const haystack = field === 'all'
+        ? [lead.name, lead.email, lead.company, lead.owner]
+        : field === 'name'
+            ? [lead.name]
+            : field === 'email'
+                ? [lead.email]
+                : [lead.company];
+
+    return haystack.some(value => value?.toLowerCase().includes(needle));
+}
+
+function matchesStage(lead: Lead, stage: string): boolean {
+    if (stage === 'all') {
+        return true;
+    }
+
+    if (stage === NO_STAGE) {
+        return !lead.lead_stage;
+    }
+
+    return lead.lead_stage === stage;
+}
+
+function matchesCreatedRange(lead: Lead, range: CustomRange): boolean {
+    if (!range.from && !range.to) {
+        return true;
+    }
+
+    const created = parseLeadDate(lead.created_date);
+
+    // A lead with no parseable Create Date cannot satisfy a date range, so it
+    // drops out rather than being let through on a technicality.
+    if (!created) {
+        return false;
+    }
+
+    return inCustomRange(created, range);
+}
 
 // ---------------------------------------------------------------------------
 // Drill-down modal table (inherits the dashboard filters)
@@ -590,16 +796,155 @@ function ModalLeadsTable({ leads, onSelectLead }: { leads: Lead[]; onSelectLead:
 
 function LeadsTable({ leads, onSelectLead }: { leads: Lead[]; onSelectLead: (lead: Lead) => void }) {
     const [page, setPage] = useState(1);
-    const totalPages = Math.max(1, Math.ceil(leads.length / PAGE_SIZE));
-    const start = (page - 1) * PAGE_SIZE;
-    const pageLeads = leads.slice(start, start + PAGE_SIZE);
+    const [search, setSearch] = useState('');
+    const [searchField, setSearchField] = useState<SearchField>('all');
+    const [stageFilter, setStageFilter] = useState('all');
+    const [createdRange, setCreatedRange] = useState<CustomRange>(EMPTY_RANGE);
+
+    // Offered stages come from the rows actually on screen, so the list follows
+    // whatever Salesforce is populating today (Inquiry, MQL, SQL, …) instead of
+    // a hardcoded set that silently hides a new one.
+    const stageOptions = useMemo(
+        () => [...new Set(leads.map(l => l.lead_stage).filter(Boolean))].sort(),
+        [leads],
+    );
+
+    const hasUnstaged = useMemo(() => leads.some(l => !l.lead_stage), [leads]);
+
+    const visibleLeads = useMemo(
+        () => leads.filter(lead =>
+            matchesSearch(lead, search, searchField)
+            && matchesStage(lead, stageFilter)
+            && matchesCreatedRange(lead, createdRange)),
+        [leads, search, searchField, stageFilter, createdRange],
+    );
+
+    const tableFiltered = search.trim() !== '' || stageFilter !== 'all' || !!createdRange.from || !!createdRange.to;
+
+    const totalPages = Math.max(1, Math.ceil(visibleLeads.length / PAGE_SIZE));
+    // Clamping rather than resetting from an effect: narrowing a filter can
+    // leave `page` past the end, and set-state-in-effect is a lint error here.
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * PAGE_SIZE;
+    const pageLeads = visibleLeads.slice(start, start + PAGE_SIZE);
+
+    function resetPage() {
+        setPage(1);
+    }
+
+    function clearTableFilters() {
+        setSearch('');
+        setSearchField('all');
+        setStageFilter('all');
+        setCreatedRange(EMPTY_RANGE);
+        resetPage();
+    }
 
     return (
         <Card>
             <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                    <CardTitle className="text-base font-semibold">Leads</CardTitle>
-                    <span className="text-xs text-muted-foreground">{leads.length.toLocaleString()} total</span>
+                <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                        <CardTitle className="text-base font-semibold">Leads</CardTitle>
+                        <span className="text-xs text-muted-foreground">
+                            {tableFiltered
+                                ? `${visibleLeads.length.toLocaleString()} of ${leads.length.toLocaleString()}`
+                                : `${leads.length.toLocaleString()} total`}
+                        </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="relative">
+                            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                type="search"
+                                value={search}
+                                onChange={e => {
+                                    setSearch(e.target.value);
+                                    resetPage();
+                                }}
+                                placeholder="Search leads"
+                                aria-label="Search leads"
+                                className="h-8 w-56 pl-8 text-xs"
+                            />
+                        </div>
+
+                        <Select
+                            value={searchField}
+                            onValueChange={v => {
+                                setSearchField(v as SearchField);
+                                resetPage();
+                            }}
+                        >
+                            <SelectTrigger className="h-8 w-32 text-xs">
+                                <SelectValue placeholder="Search in" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {SEARCH_FIELDS.map(f => (
+                                    <SelectItem key={f.value} value={f.value} className="text-xs">{f.label}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+
+                        <Select
+                            value={stageFilter}
+                            onValueChange={v => {
+                                setStageFilter(v);
+                                resetPage();
+                            }}
+                        >
+                            <SelectTrigger className="h-8 w-40 text-xs">
+                                <SelectValue placeholder="Stage" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all" className="text-xs">All stages</SelectItem>
+                                {stageOptions.map(stage => (
+                                    <SelectItem key={stage} value={stage} className="text-xs">{stage}</SelectItem>
+                                ))}
+                                {hasUnstaged && (
+                                    <SelectItem value={NO_STAGE} className="text-xs">No stage</SelectItem>
+                                )}
+                            </SelectContent>
+                        </Select>
+
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">Created</span>
+                            <Input
+                                type="date"
+                                aria-label="Created from"
+                                value={createdRange.from}
+                                max={createdRange.to || undefined}
+                                onChange={e => {
+                                    setCreatedRange(r => ({ ...r, from: e.target.value }));
+                                    resetPage();
+                                }}
+                                className="h-8 w-[9.5rem] text-xs"
+                            />
+                            <span className="text-xs text-muted-foreground">to</span>
+                            <Input
+                                type="date"
+                                aria-label="Created to"
+                                value={createdRange.to}
+                                min={createdRange.from || undefined}
+                                onChange={e => {
+                                    setCreatedRange(r => ({ ...r, to: e.target.value }));
+                                    resetPage();
+                                }}
+                                className="h-8 w-[9.5rem] text-xs"
+                            />
+                        </div>
+
+                        {tableFiltered && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 px-2 text-xs text-muted-foreground"
+                                onClick={clearTableFilters}
+                            >
+                                Clear
+                            </Button>
+                        )}
+                    </div>
                 </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -621,14 +966,14 @@ function LeadsTable({ leads, onSelectLead }: { leads: Lead[]; onSelectLead: (lea
                 {totalPages > 1 && (
                     <div className="flex items-center justify-between border-t px-6 py-3">
                         <span className="text-xs text-muted-foreground">
-                            {start + 1}–{Math.min(start + PAGE_SIZE, leads.length)} of {leads.length.toLocaleString()}
+                            {start + 1}–{Math.min(start + PAGE_SIZE, visibleLeads.length)} of {visibleLeads.length.toLocaleString()}
                         </span>
                         <div className="flex items-center gap-1">
-                            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="h-7 w-7 p-0">
+                            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1} className="h-7 w-7 p-0">
                                 <ChevronLeft className="h-4 w-4" />
                             </Button>
-                            <span className="text-xs px-2 text-muted-foreground">{page} / {totalPages}</span>
-                            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="h-7 w-7 p-0">
+                            <span className="text-xs px-2 text-muted-foreground">{safePage} / {totalPages}</span>
+                            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages} className="h-7 w-7 p-0">
                                 <ChevronRight className="h-4 w-4" />
                             </Button>
                         </div>
@@ -648,6 +993,7 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
 
     const [countryFilter, setCountryFilter] = useState('all');
     const [periodFilter, setPeriodFilter] = useState('all');
+    const [customRange, setCustomRange] = useState<CustomRange>(EMPTY_RANGE);
     const [modalCard, setModalCard] = useState<CardKey | null>(null);
     const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
@@ -658,10 +1004,15 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
 
     const filteredLeads = useMemo(() => {
         let result = leads;
-        if (countryFilter !== 'all') result = result.filter(l => l.country === countryFilter);
-        result = filterByPeriod(result, periodFilter);
+
+        if (countryFilter !== 'all') {
+            result = result.filter(l => l.country === countryFilter);
+        }
+
+        result = filterByPeriod(result, periodFilter, customRange);
+
         return result;
-    }, [leads, countryFilter, periodFilter]);
+    }, [leads, countryFilter, periodFilter, customRange]);
 
     const hasActiveFilters = countryFilter !== 'all' || periodFilter !== 'all';
 
@@ -679,12 +1030,19 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
 
     const activeFilterLabel = useMemo(() => {
         const parts: string[] = [];
-        if (countryFilter !== 'all') parts.push(countryFilter);
-        if (periodFilter !== 'all') {
+
+        if (countryFilter !== 'all') {
+            parts.push(countryFilter);
+        }
+
+        if (periodFilter === 'custom') {
+            parts.push(customRangeLabel(customRange));
+        } else if (periodFilter !== 'all') {
             parts.push(PERIOD_OPTIONS.find(o => o.value === periodFilter)?.label ?? periodFilter);
         }
+
         return parts.join(' · ');
-    }, [countryFilter, periodFilter]);
+    }, [countryFilter, periodFilter, customRange]);
 
     return (
         <div className="flex h-full flex-col gap-6 p-4 md:p-6">
@@ -719,7 +1077,18 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
                     </SelectContent>
                 </Select>
                 
-                <Select value={periodFilter} onValueChange={v => setPeriodFilter(v)}>
+                <Select
+                    value={periodFilter}
+                    onValueChange={v => {
+                        setPeriodFilter(v);
+
+                        // Leaving the custom option drops the dates, so coming
+                        // back to it starts from a clean range.
+                        if (v !== 'custom') {
+                            setCustomRange(EMPTY_RANGE);
+                        }
+                    }}
+                >
                     <SelectTrigger className="h-8 w-44 text-xs">
                         <SelectValue placeholder="Period" />
                     </SelectTrigger>
@@ -729,9 +1098,35 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
                         ))}
                     </SelectContent>
                 </Select>
+                {periodFilter === 'custom' && (
+                    <div className="flex items-center gap-2">
+                        <Input
+                            type="date"
+                            aria-label="Range start"
+                            value={customRange.from}
+                            max={customRange.to || undefined}
+                            onChange={e => setCustomRange(r => ({ ...r, from: e.target.value }))}
+                            className="h-8 w-[9.5rem] text-xs"
+                        />
+                        <span className="text-xs text-muted-foreground">to</span>
+                        <Input
+                            type="date"
+                            aria-label="Range end"
+                            value={customRange.to}
+                            min={customRange.from || undefined}
+                            onChange={e => setCustomRange(r => ({ ...r, to: e.target.value }))}
+                            className="h-8 w-[9.5rem] text-xs"
+                        />
+                    </div>
+                )}
                 {hasActiveFilters && (
                     <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground"
-                        onClick={() => { setCountryFilter('all'); setPeriodFilter('all'); }}>
+                        onClick={() => {
+                            setCountryFilter('all');
+                            setPeriodFilter('all');
+                            setCustomRange(EMPTY_RANGE);
+                        }}
+                    >
                         Clear filters
                     </Button>
                 )}
@@ -793,7 +1188,14 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
             )}
 
             {/* Drill-down modal */}
-            <Dialog open={modalCard !== null} onOpenChange={open => { if (!open) setModalCard(null); }}>
+            <Dialog
+                open={modalCard !== null}
+                onOpenChange={open => {
+                    if (!open) {
+                        setModalCard(null);
+                    }
+                }}
+            >
                 <DialogContent className="w-[85vw] !max-w-none max-h-[85vh] flex flex-col gap-4">
                     <DialogHeader>
                         <DialogTitle>{modalCard ? CARD_LABELS[modalCard] : ''}</DialogTitle>
@@ -805,7 +1207,9 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
                         {modalCard && (
                             <ModalLeadsTable
                                 leads={modalLeads}
-                                onSelectLead={lead => { setSelectedLead(lead); }}
+                                onSelectLead={lead => {
+                                    setSelectedLead(lead);
+                                }}
                             />
                         )}
                     </div>

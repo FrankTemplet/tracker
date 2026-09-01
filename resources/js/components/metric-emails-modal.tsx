@@ -105,8 +105,23 @@ export function MetricEmailsModal({
     const valueLabel = metric ? METRIC_VALUE_LABEL[metric] : '';
 
     // Drilling into recipients is only wired for Carib deliveries so far
-    const canDrillIntoRecipients =
+    const recipientsAvailable =
         metric === 'delivered' && region?.toLowerCase() === 'carib' && !!campaignId;
+
+    /**
+     * The recipient log is loaded separately from the metrics and lags them, so
+     * a send can have deliveries here and no rows there. Offering the click
+     * anyway lands the user in an empty modal that reads as a bug, so each row
+     * decides for itself. `has_recipients` undefined or null means the coverage
+     * list was unavailable — the click stays offered rather than hiding a
+     * working feature.
+     */
+    const canDrillInto = (email: EmailCampaignMetric) =>
+        recipientsAvailable && email.has_recipients !== false;
+
+    const uncovered = recipientsAvailable
+        ? filteredEmails.filter((email) => email.has_recipients === false).length
+        : 0;
 
     const handleDownload = () => {
         if (!metric) {
@@ -131,7 +146,7 @@ return;
                     <DialogTitle>{title}</DialogTitle>
                     <DialogDescription>
                         Sent emails from Email Campaign Metrics contributing to this total
-                        {canDrillIntoRecipients && ' · select an email to see its recipients'}
+                        {recipientsAvailable && ' · select an email to see its recipients'}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -164,20 +179,25 @@ return;
                                     {filteredEmails.map((email) => (
                                         <tr
                                             key={email.id}
-                                            onClick={canDrillIntoRecipients ? () => setSelectedEmail(email) : undefined}
+                                            onClick={canDrillInto(email) ? () => setSelectedEmail(email) : undefined}
                                             className={
-                                                canDrillIntoRecipients
+                                                canDrillInto(email)
                                                     ? 'hover:bg-muted/40 cursor-pointer'
                                                     : 'hover:bg-muted/20'
                                             }
                                         >
                                             <td className="px-4 py-3 font-medium max-w-xs">
                                                 <span className="flex items-start gap-1.5">
-                                                    {canDrillIntoRecipients && (
+                                                    {canDrillInto(email) && (
                                                         <ChevronRight className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
                                                     )}
                                                     <span className="line-clamp-2">{email.subject}</span>
                                                 </span>
+                                                {recipientsAvailable && email.has_recipients === false && (
+                                                    <span className="mt-1 block text-[11px] text-muted-foreground italic">
+                                                        Recipients not in the engagement log
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-muted-foreground text-xs max-w-xs">
                                                 <span className="line-clamp-2">{email.name}</span>
@@ -203,6 +223,12 @@ return;
                             Download Excel
                         </Button>
                         <p className="text-xs text-muted-foreground text-right">
+                            {uncovered > 0 && (
+                                <span className="block">
+                                    {uncovered.toLocaleString()} of {filteredEmails.length.toLocaleString()} sent
+                                    email{uncovered === 1 ? '' : 's'} have no recipient rows loaded yet
+                                </span>
+                            )}
                             {filteredEmails.length.toLocaleString()} sent email{filteredEmails.length === 1 ? '' : 's'}
                             {' · '}
                             {filteredEmails.reduce((sum, email) => sum + getMetricValue(email, metric), 0).toLocaleString()}{' '}

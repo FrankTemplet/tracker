@@ -136,6 +136,45 @@ class DataverseService
     }
 
     /**
+     * Every send name the recipient log holds rows for, lowercased.
+     *
+     * The log is fed separately from Power BI and covers only part of the
+     * catalogue — as of this writing 57 Carib sends, none newer than Jul 2026.
+     * Without this list the UI cannot tell "this send reached nobody" from
+     * "this send was never loaded into the log", and both look like an empty
+     * modal to the user.
+     *
+     * A groupby returns one row per distinct name, so this stays a single cheap
+     * request no matter how many recipients are behind it.
+     *
+     * @return list<string>
+     */
+    public function getSendNamesWithLogs(): array
+    {
+        if (! $this->hasCredentials()) {
+            return [];
+        }
+
+        return Cache::remember('dataverse_send_names_with_logs', $this->cacheTtl(), function () {
+            $response = $this->get('cr21a_emailengagementlogs', [
+                '$apply' => 'groupby((cr21a_emailname))',
+            ], null, 5000);
+
+            $names = [];
+
+            foreach ($response['value'] ?? [] as $row) {
+                $name = strtolower(trim((string) ($row['cr21a_emailname'] ?? '')));
+
+                if ($name !== '') {
+                    $names[$name] = true;
+                }
+            }
+
+            return array_keys($names);
+        });
+    }
+
+    /**
      * Get every engagement log for a send, following pagination to the end.
      *
      * Only use this for exports; a large send can return tens of thousands of

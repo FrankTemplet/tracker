@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\AuthorizesCampaigns;
+use App\Services\DataverseService;
 use App\Services\PowerBiDataTransformer;
 use App\Services\PowerBiService;
 use Illuminate\Http\JsonResponse;
@@ -56,6 +57,12 @@ class PowerBiController extends Controller
         $selectedYear = $request->query('year');
         $selectedCampaignId = $request->query('campaign_id');
 
+        // The page fills in whatever the request leaves out, so landing on it
+        // never shows an empty portal. `clear=1` is how the Clear button asks
+        // for the empty state on purpose; without it an empty query string is
+        // read as "first visit" and gets the defaults.
+        $applyDefaults = ! $request->boolean('clear');
+
         // Users can only filter by a region they are assigned to
         if ($selectedRegion && ! in_array($selectedRegion, $allowedRegions, true)) {
             $selectedRegion = null;
@@ -63,6 +70,17 @@ class PowerBiController extends Controller
 
         if ($selectedYear !== null && ! in_array((string) $selectedYear, self::ALLOWED_YEARS, true)) {
             $selectedYear = null;
+        }
+
+        if ($applyDefaults && $selectedRegion === null) {
+            $selectedRegion = $allowedRegions[0] ?? null;
+        }
+
+        $yearWasDefaulted = false;
+
+        if ($applyDefaults && $selectedYear === null) {
+            $selectedYear = $this->defaultYear();
+            $yearWasDefaulted = true;
         }
 
         try {
@@ -74,28 +92,31 @@ class PowerBiController extends Controller
                 $rawCampaigns = $this->powerBiService->getUniqueCampaigns();
                 $allCampaigns = PowerBiDataTransformer::transformCampaigns($rawCampaigns);
 
-                // Filter by region and year
-                $campaigns = array_values(array_filter($allCampaigns, function ($campaign) use ($selectedRegion, $selectedYear, $allowedRegions, $page) {
-                    $campaignName = strtolower($campaign['name']);
+                $campaigns = $this->filterCampaigns($allCampaigns, $selectedRegion, (string) $selectedYear, $allowedRegions, $page);
 
-                    // Prefix must be one of the user's allowed regions
-                    // (also drops names starting with a number)
-                    $hasAllowedPrefix = $this->campaignNameInRegions($campaignName, $allowedRegions);
+                // A defaulted year that turns up nothing is worse than useless:
+                // it puts the user on a year with no campaigns on their very
+                // first visit. A year the user picked is left alone.
+                if ($campaigns === [] && $yearWasDefaulted) {
+                    foreach ($this->fallbackYears() as $year) {
+                        $candidates = $this->filterCampaigns($allCampaigns, $selectedRegion, $year, $allowedRegions, $page);
 
-                    // Check if campaign contains the region (carib, latam or networks)
-                    $hasRegion = str_contains($campaignName, $selectedRegion);
-
-                    // Check if campaign contains the year
-                    $hasYear = str_contains($campaignName, $selectedYear);
-
-                    return $hasAllowedPrefix && $hasRegion && $hasYear
-                        && $this->campaignMatchesPage($campaignName, $page);
-                }));
+                        if ($candidates !== []) {
+                            $selectedYear = $year;
+                            $campaigns = $candidates;
+                            break;
+                        }
+                    }
+                }
             }
 
             // A campaign is only accessible when it appears in the user's filtered list
             if ($selectedCampaignId && ! in_array($selectedCampaignId, array_column($campaigns, 'id'), true)) {
                 $selectedCampaignId = null;
+            }
+
+            if ($applyDefaults && $selectedCampaignId === null) {
+                $selectedCampaignId = $this->mostRecentCampaignId($campaigns);
             }
 
             $analytics = null;
@@ -108,6 +129,8 @@ class PowerBiController extends Controller
                         try {
                             $registeredMembers = $this->powerBiService->getMembersByStatus($selectedCampaignId, 'registered-appointment');
                             $analytics['summary']['registered_appointment'] = count($registeredMembers);
+
+                            $analytics['emails'] = $this->markRecipientCoverage($analytics['emails'] ?? []);
 
                             // Fetch campaign details from engagement table
                             $engagements = $this->powerBiService->getEngagementsByCampaign($selectedCampaignId);
@@ -268,6 +291,134 @@ class PowerBiController extends Controller
                 'message' => 'Failed to fetch members. Please try again later.',
             ], 500);
         }
+    }
+
+    /**
+     * Flag which sends can be drilled down to their recipients.
+     *
+     * Recipient-level data lives in Dataverse, which is loaded separately from
+     * Power BI and lags it. Marking each send lets the UI say "not in the
+     * recipient log" instead of opening an empty modal that reads as a bug.
+     *
+     * `null` means the coverage list could not be read; the UI keeps the
+     * drill-down offered in that case rather than hiding a working feature
+     * because of a transient Dataverse failure.
+     *
+     * @param  array<int, array<string, mixed>>  $emails
+     * @return array<int, array<string, mixed>>
+     */
+    protected function markRecipientCoverage(array $emails): array
+    {
+        try {
+            $covered = array_flip(app(DataverseService::class)->getSendNamesWithLogs());
+        } catch (\Exception $e) {
+            Log::warning('Could not read Dataverse recipient coverage', ['error' => $e->getMessage()]);
+
+            return array_map(function (array $email) {
+                $email['has_recipients'] = null;
+
+                return $email;
+            }, $emails);
+        }
+
+        return array_map(function (array $email) use ($covered) {
+            $email['has_recipients'] = isset($covered[strtolower(trim((string) ($email['name'] ?? '')))]);
+
+            return $email;
+        }, $emails);
+    }
+
+    /**
+     * Narrow the catalogue to the campaigns one page shows for a region and year.
+     *
+     * @param  array<int, array{id: string, name: string, business_unit: string, created_at: string}>  $allCampaigns
+     * @param  list<string>  $allowedRegions
+     * @return array<int, array{id: string, name: string, business_unit: string, created_at: string}>
+     */
+    protected function filterCampaigns(array $allCampaigns, string $region, string $year, array $allowedRegions, string $page): array
+    {
+        return array_values(array_filter($allCampaigns, function ($campaign) use ($region, $year, $allowedRegions, $page) {
+            $campaignName = strtolower($campaign['name']);
+
+            // Prefix must be one of the user's allowed regions
+            // (also drops names starting with a number)
+            $hasAllowedPrefix = $this->campaignNameInRegions($campaignName, $allowedRegions);
+
+            // Check if campaign contains the region (carib, latam or networks)
+            $hasRegion = str_contains($campaignName, $region);
+
+            // Check if campaign contains the year
+            $hasYear = str_contains($campaignName, $year);
+
+            return $hasAllowedPrefix && $hasRegion && $hasYear
+                && $this->campaignMatchesPage($campaignName, $page);
+        }));
+    }
+
+    /**
+     * The year a first visit lands on: this one when it is in range, otherwise
+     * the latest year the pages support.
+     */
+    protected function defaultYear(): string
+    {
+        $currentYear = (string) now()->year;
+
+        if (in_array($currentYear, self::ALLOWED_YEARS, true)) {
+            return $currentYear;
+        }
+
+        $years = self::ALLOWED_YEARS;
+
+        return (string) end($years);
+    }
+
+    /**
+     * Years to try, newest first, when the defaulted year has no campaigns.
+     *
+     * @return list<string>
+     */
+    protected function fallbackYears(): array
+    {
+        $years = self::ALLOWED_YEARS;
+        rsort($years);
+
+        return array_values(array_diff($years, [$this->defaultYear()]));
+    }
+
+    /**
+     * Pick the campaign a first visit opens on: the most recently started one.
+     *
+     * `created_at` comes from Power BI as free-form text ('Scheduled Date' is
+     * not a typed date), so anything unparseable sorts last instead of being
+     * trusted, and the list order decides when no date parses at all.
+     *
+     * @param  array<int, array{id: string, name: string, business_unit: string, created_at: string}>  $campaigns
+     */
+    protected function mostRecentCampaignId(array $campaigns): ?string
+    {
+        if ($campaigns === []) {
+            return null;
+        }
+
+        $best = null;
+        $bestTimestamp = null;
+
+        foreach ($campaigns as $campaign) {
+            $timestamp = strtotime((string) ($campaign['created_at'] ?? ''));
+
+            if ($timestamp === false) {
+                continue;
+            }
+
+            if ($bestTimestamp === null || $timestamp > $bestTimestamp) {
+                $best = $campaign;
+                $bestTimestamp = $timestamp;
+            }
+        }
+
+        $best ??= $campaigns[0];
+
+        return ($best['id'] ?? '') !== '' ? $best['id'] : null;
     }
 
     /**

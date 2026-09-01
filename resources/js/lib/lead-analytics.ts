@@ -30,7 +30,7 @@ function isDisqualified(lead: Lead): boolean {
         || DISQUALIFIED_OUTCOMES.includes(lead.lead_status?.trim().toLowerCase());
 }
 
-/** Slices past this fold into "Otros" so the donut stays readable. */
+/** Slices past this fold into "Other" so the donut stays readable. */
 const MAX_SOURCE_SLICES = 6;
 
 /** Weeks of history the aging sparklines plot. */
@@ -148,7 +148,7 @@ export function buildFunnel(leads: Lead[]): LeadFunnel {
     };
 }
 
-/** Group leads by Lead Source, folding the long tail into "Otros". */
+/** Group leads by Lead Source, folding the long tail into "Other". */
 export function buildSourceBreakdown(leads: Lead[]): SourceSlice[] {
     const counts = new Map<string, number>();
     let unknown = 0;
@@ -179,11 +179,11 @@ export function buildSourceBreakdown(leads: Lead[]): SourceSlice[] {
     if (tail.length > 0) {
         const rest = tail.reduce((sum, [, count]) => sum + count, 0);
 
-        slices.push({ label: 'Otros', count: rest, share: share(rest, total), isUnknown: false });
+        slices.push({ label: 'Other', count: rest, share: share(rest, total), isUnknown: false });
     }
 
     if (unknown > 0) {
-        slices.push({ label: 'Sin fuente', count: unknown, share: share(unknown, total), isUnknown: true });
+        slices.push({ label: 'No source', count: unknown, share: share(unknown, total), isUnknown: true });
     }
 
     return slices;
