@@ -78,6 +78,15 @@ export interface AgingSummary {
     touched: number;
     untouched: number;
     untouchedShare: number;
+    /**
+     * Leads with no history event at all — the denominator for `ageBuckets` only.
+     *
+     * Distinct from `untouched`, which counts leads with no event strictly after
+     * creation: a lead whose only events land on its creation day is untouched
+     * but not never-reassigned.
+     */
+    neverReassigned: number;
+    /** Age distribution of the never-reassigned leads only, not of every measured lead. */
     ageBuckets: AgingBucket[];
     firstTouchBuckets: AgingBucket[];
     trend: AgingTrendPoint[];
@@ -244,12 +253,22 @@ function weekLabel(key: string): string {
 /**
  * Aggregate aging across the filtered leads.
  *
- * The two averages and the buckets read every measured lead. The trend groups
- * leads into weekly creation cohorts: "age" therefore ramps upward for older
- * cohorts by construction, which is what a cohort chart is supposed to show.
+ * The two averages read every measured lead. The trend groups leads into weekly
+ * creation cohorts: "age" therefore ramps upward for older cohorts by
+ * construction, which is what a cohort chart is supposed to show.
+ *
+ * `ageBuckets` is the one exception: it reads only leads with no history event,
+ * so the distribution answers "how long have untouched leads been waiting"
+ * rather than "how old is the database". Measured over every lead it was
+ * dominated by long-closed records, which pushed almost everything into the
+ * +30d bucket and made the panel unreadable. Note that the lead history only
+ * records owner reassignments — Salesforce status transitions are not in the
+ * dataset — so "never reassigned" is the closest available stand-in for "nobody
+ * has worked this lead".
  */
 export function buildAgingSummary(leads: Lead[]): AgingSummary {
     const ageDays: number[] = [];
+    const neverReassignedAgeDays: number[] = [];
     const firstTouchDays: number[] = [];
     const cohorts = new Map<string, { age: number[]; firstTouch: number[]; count: number }>();
     let untouched = 0;
@@ -265,6 +284,10 @@ export function buildAgingSummary(leads: Lead[]): AgingSummary {
         const firstTouch = aging[1] === null ? null : aging[1] / 24;
 
         ageDays.push(age);
+
+        if (aging[2] === 0) {
+            neverReassignedAgeDays.push(age);
+        }
 
         if (firstTouch === null) {
             untouched++;
@@ -311,7 +334,8 @@ export function buildAgingSummary(leads: Lead[]): AgingSummary {
         touched: firstTouchDays.length,
         untouched,
         untouchedShare: share(untouched, measured),
-        ageBuckets: bucketize(ageDays),
+        neverReassigned: neverReassignedAgeDays.length,
+        ageBuckets: bucketize(neverReassignedAgeDays),
         firstTouchBuckets: bucketize(firstTouchDays),
         trend,
     };

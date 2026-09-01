@@ -491,7 +491,9 @@ export function LeadAgingCard({ aging }: { aging: AgingSummary }) {
                     <InfoHint>
                         First touch is the first owner change recorded in the lead history. Create Date carries no
                         time of day, so durations measured from it are accurate to within a day. The trend groups by
-                        creation week, so age rises in older cohorts by definition.
+                        creation week, so age rises in older cohorts by definition. The age distribution is the
+                        one figure narrowed to leads with no owner reassignment: across every lead it just measured
+                        how old the database is, since long-closed records never leave the +30d bucket.
                     </InfoHint>
                 </div>
             </CardHeader>
@@ -509,7 +511,7 @@ export function LeadAgingCard({ aging }: { aging: AgingSummary }) {
                                     subtitle={`${aging.measured.toLocaleString()} leads measured`}
                                     description="How long each lead has existed, from its Create Date to today. It keeps growing while the lead stays in the system, so it reads as backlog age rather than as response speed."
                                     trendCaption="Each point is one creation week, plotted with the average age of the leads created that week. Older weeks sit higher because they have had more time to age, so read the shape of the line rather than its slope."
-                                    bucketCaption="How the same leads spread across age ranges. A heavy tail on +30d means old leads are still sitting in the system."
+                                    bucketCaption={`Narrowed to the ${aging.neverReassigned.toLocaleString()} of ${aging.measured.toLocaleString()} leads with no owner reassignment — every other figure in this block reads all measured leads. A heavy tail on +30d means untouched leads are piling up.`}
                                     average={aging.avgAgeDays}
                                     color="var(--viz-cat-1)"
                                     metric="ageDays"
