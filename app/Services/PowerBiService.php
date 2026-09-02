@@ -656,7 +656,7 @@ class PowerBiService
      * Per-campaign engagement footprint: how many members it touched, and
      * whether any of them got there through an email.
      *
-     * @return array<string, array{members: int, email_activity: bool}>  Keyed by 15-character campaign ID
+     * @return array<string, array{members: int, email_activity: bool}> Keyed by 15-character campaign ID
      */
     public function getEngagementFootprint(): array
     {
@@ -738,11 +738,18 @@ class PowerBiService
             $token = $this->getAccessToken();
             $url = $this->buildExecuteQueriesUrl();
 
+            // Sends whose name starts with a digit are Pardot duplicates and are
+            // dropped everywhere else, so they must not make a campaign look
+            // covered here either. See PowerBiDataTransformer::isNumberedSendName().
             $dax = <<<'DAX'
                 EVALUATE
                 SUMMARIZECOLUMNS(
                     '(raw) Email Campaign Metrics'[Campaign ID],
-                    "email_rows", COUNTROWS('(raw) Email Campaign Metrics')
+                    "email_rows", CALCULATE(
+                        COUNTROWS('(raw) Email Campaign Metrics'),
+                        NOT LEFT('(raw) Email Campaign Metrics'[Name], 1)
+                            IN {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
+                    )
                 )
                 DAX;
 

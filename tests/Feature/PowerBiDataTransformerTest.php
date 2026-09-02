@@ -398,3 +398,50 @@ test('buildLeadHistoryTimeline sorts unparseable dates last without breaking the
         ->and($timeline[2]['at_display'])->toBe('bogus')
         ->and($timeline[2]['delta_hours'])->toBeNull();
 });
+
+test('buildCampaignAnalyticsFromEmailRows drops sends whose name starts with a number', function () {
+    $row = function (string $name, int $delivered, int $hardBounces): array {
+        return [
+            '(raw) Email Campaign Metrics[RowID]' => $name,
+            '(raw) Email Campaign Metrics[Name]' => $name,
+            '(raw) Email Campaign Metrics[Subject]' => 'Subject',
+            '(raw) Email Campaign Metrics[Scheduled Date]' => '5/5/2026 10:00:00 AM',
+            '(raw) Email Campaign Metrics[Campaign ID]' => 'camp1',
+            '(raw) Email Campaign Metrics[Campaign Name]' => 'CARIB_JAM_Prod_MDM_Ent_Feb2026',
+            '(raw) Email Campaign Metrics[Total Delivered]' => $delivered,
+            '(raw) Email Campaign Metrics[Total Hard Bounces]' => $hardBounces,
+        ];
+    };
+
+    $analytics = PowerBiDataTransformer::buildCampaignAnalyticsFromEmailRows([
+        $row('13895_CARIB_REG_Info_MDM_Ent_Mar2026', 500, 40),
+        $row('CARIB_JAM_Prod_MDM_Ent_Feb2026', 100, 6),
+    ]);
+
+    expect($analytics)->not->toBeNull()
+        ->and($analytics['emails'])->toHaveCount(1)
+        ->and($analytics['emails'][0]['name'])->toBe('CARIB_JAM_Prod_MDM_Ent_Feb2026')
+        ->and($analytics['summary']['delivered'])->toBe(100)
+        ->and($analytics['summary']['hard_bounces'])->toBe(6);
+});
+
+test('buildCampaignAnalyticsFromEmailRows returns null when every send is numbered', function () {
+    $analytics = PowerBiDataTransformer::buildCampaignAnalyticsFromEmailRows([
+        [
+            '(raw) Email Campaign Metrics[Name]' => '13895_CARIB_REG_Info_MDM_Ent_Mar2026',
+            '(raw) Email Campaign Metrics[Campaign ID]' => 'camp1',
+        ],
+    ]);
+
+    expect($analytics)->toBeNull();
+});
+
+test('isNumberedSendName only matches a leading digit', function (string $name, bool $expected) {
+    expect(PowerBiDataTransformer::isNumberedSendName($name))->toBe($expected);
+})->with([
+    ['13895_CARIB_REG_Info_MDM_Ent_Mar2026', true],
+    ['  20545_CARIB_Reg_Event_SpecialEvent_Apr2025', true],
+    ['CARIB_JAM_Prod_MDM_Ent_Feb2026', false],
+    ['CARIB_REG_Event_Amplify_Ent_May2026_3', false],
+    ['', false],
+]);

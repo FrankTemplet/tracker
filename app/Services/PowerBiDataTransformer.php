@@ -183,6 +183,19 @@ class PowerBiDataTransformer
     }
 
     /**
+     * Whether a send name carries the numeric prefix Pardot puts on copies.
+     *
+     * Names such as "13895_CARIB_REG_Info_MDM_Ent_Mar2026" are duplicates of a
+     * real send — the same name shows up under more than one campaign — so they
+     * are not shown and do not count towards a campaign's totals. Every genuine
+     * send starts with its region instead.
+     */
+    public static function isNumberedSendName(string $name): bool
+    {
+        return preg_match('/^\s*\d/', $name) === 1;
+    }
+
+    /**
      * Build campaign-level analytics from Email Campaign Metrics rows.
      *
      * @param  array<int, array<string, mixed>>  $rows
@@ -213,7 +226,14 @@ class PowerBiDataTransformer
             return null;
         }
 
-        $emails = array_map(fn (array $row) => self::transformEmailCampaignMetric($row), $rows);
+        $emails = array_values(array_filter(
+            array_map(fn (array $row) => self::transformEmailCampaignMetric($row), $rows),
+            fn (array $email) => ! self::isNumberedSendName($email['name']),
+        ));
+
+        if ($emails === []) {
+            return null;
+        }
 
         $delivered = array_sum(array_column($emails, 'delivered'));
         $uniqueOpens = array_sum(array_column($emails, 'unique_opens'));
@@ -476,7 +496,7 @@ class PowerBiDataTransformer
      * doubled the Inertia payload, which is why this compact shape exists.
      *
      * @param  array<int, array>  $historyRows  Raw history rows for this lead
-     * @return array{0: float, 1: ?float, 2: int}|null  [age_hours, hours_to_first_touch, owner_change_count]
+     * @return array{0: float, 1: ?float, 2: int}|null [age_hours, hours_to_first_touch, owner_change_count]
      */
     public static function compactLeadAging(string $createdDate, array $historyRows, ?CarbonImmutable $now = null): ?array
     {
