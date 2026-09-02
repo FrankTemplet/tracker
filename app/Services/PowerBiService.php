@@ -619,6 +619,9 @@ class PowerBiService
                     'created_by' => $createdBy,
                     'created_alias' => $createdAlias,
                     'lead_source' => $row['(raw) Lead v2[Lead Source]'] ?? '',
+                    // Carried so the front end can attribute a source to leads that
+                    // reach us with [Lead Source] empty. See resolveLeadSource().
+                    'campaign' => $row['(raw) Lead v2[Account Engagement Campaign]'] ?? '',
                     'lead_status' => $row['(raw) Lead v2[Lead Status]'] ?? '',
                     'aging' => PowerBiDataTransformer::compactLeadAging(
                         $row['(raw) Lead v2[Create Date]'] ?? '',

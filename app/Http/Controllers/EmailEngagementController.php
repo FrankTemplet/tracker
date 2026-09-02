@@ -8,6 +8,7 @@ use App\Services\PowerBiService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class EmailEngagementController extends Controller
 {
@@ -37,7 +38,7 @@ class EmailEngagementController extends Controller
             'email_name' => ['required', 'string', 'max:255'],
             'cursor' => ['nullable', 'string', 'max:2000'],
             'page_size' => ['nullable', 'integer', 'min:1', 'max:5000'],
-            'delivered_only' => ['nullable', 'boolean'],
+            'engagement' => ['nullable', 'string', Rule::in(array_keys(DataverseService::ENGAGEMENT_FILTERS))],
         ]);
 
         $campaignName = $this->campaignName($campaignId);
@@ -63,7 +64,7 @@ class EmailEngagementController extends Controller
                 $validated['email_name'],
                 $validated['cursor'] ?? null,
                 $validated['page_size'] ?? null,
-                (bool) ($validated['delivered_only'] ?? false),
+                $validated['engagement'] ?? null,
             );
 
             return response()->json([
@@ -76,6 +77,7 @@ class EmailEngagementController extends Controller
             Log::error('Failed to fetch email engagement logs', [
                 'campaign_id' => $campaignId,
                 'email_name' => $validated['email_name'],
+                'engagement' => $validated['engagement'] ?? null,
                 'error' => $e->getMessage(),
             ]);
 

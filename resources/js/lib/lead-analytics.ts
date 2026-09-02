@@ -157,13 +157,53 @@ export function buildFunnel(leads: Lead[]): LeadFunnel {
     };
 }
 
+/**
+ * Resolve a lead's source, attributing one from the campaign when it is empty.
+ *
+ * A lead that arrives with no Lead Source is not unattributed in practice — the
+ * Account Engagement campaign it came through carries the signal:
+ *   - a campaign whose name starts with a digit is a web campaign
+ *   - a campaign containing "_event_" is an event campaign
+ *   - anything else came through email
+ *
+ * The digit test runs first on purpose: campaigns like "2026_event_launch"
+ * satisfy both rules, and those are attributed to Web.
+ *
+ * Every branch returns a label, so a lead can no longer end up unattributed
+ * once its source is empty — the "No source" slice now only appears for leads
+ * whose campaign is empty too.
+ */
+export function resolveLeadSource(lead: Lead): string {
+    const source = lead.lead_source?.trim();
+
+    if (source) {
+        return source;
+    }
+
+    const campaign = lead.campaign?.trim() ?? '';
+
+    if (!campaign) {
+        return '';
+    }
+
+    if (/^\d/.test(campaign)) {
+        return 'Web';
+    }
+
+    if (campaign.toLowerCase().includes('_event_')) {
+        return 'Event Lead';
+    }
+
+    return 'Email';
+}
+
 /** Group leads by Lead Source, folding the long tail into "Other". */
 export function buildSourceBreakdown(leads: Lead[]): SourceSlice[] {
     const counts = new Map<string, number>();
     let unknown = 0;
 
     for (const lead of leads) {
-        const source = lead.lead_source?.trim();
+        const source = resolveLeadSource(lead);
 
         if (!source) {
             unknown++;

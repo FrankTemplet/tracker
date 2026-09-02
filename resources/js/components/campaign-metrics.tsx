@@ -59,6 +59,14 @@ export interface EmailCampaignMetric {
      * drill-down stays offered rather than being hidden on a transient failure.
      */
     has_recipients?: boolean | null;
+    /**
+     * Which engagement subsets the recipient log holds rows of for this send.
+     *
+     * A send can be in the log and still have no hard-bounce row, so coverage
+     * is answered per metric. `null` carries the same "could not read" meaning
+     * as `has_recipients`.
+     */
+    recipient_engagements?: string[] | null;
 }
 
 export type MetricDrilldownKey =

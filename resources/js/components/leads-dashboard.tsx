@@ -65,6 +65,8 @@ export interface Lead {
     created_by: string;
     created_alias: string;
     lead_source: string;
+    /** '(raw) Lead v2'[Account Engagement Campaign] — only read to attribute an empty lead_source. */
+    campaign: string;
     lead_status: string;
     aging: LeadAgingTuple | null;
 }
@@ -76,7 +78,7 @@ export interface LeadsDashboardPageProps {
     error?: string;
 }
 
-type CardKey = 'total' | 'leads_created' | 'leads_assigned' | 'mqls' | 'sqls';
+type CardKey = 'total' | 'leads_created' | 'leads_assigned' | 'other' | 'mqls' | 'sqls';
 
 // ---------------------------------------------------------------------------
 // Stat card
@@ -271,15 +273,24 @@ function customRangeLabel(range: CustomRange): string {
  * to zero. The two aliases are distinct creators and never overlap:
  *   LeadTrge -> the Sales Outcomes Lead Triage user (leads created)
  *   b2bmausr -> the B2B marketing automation user (leads assigned)
- * So the two cards are disjoint subsets of the total, not nested ones, and
- * their sum is still <= total: other creators (manual entry, imports) fall
- * outside both. Keep this in sync with the same split in PowerBiService.
+ * So the two cards are disjoint subsets of the total, not nested ones. Every
+ * remaining creator (manual entry, imports, integrations) lands in 'other', so
+ * created + assigned + other adds up to the total exactly — each lead carries
+ * exactly one alias. Keep this in sync with the same split in PowerBiService.
+ *
+ * 'mqls' and 'sqls' are NOT part of that sum: they read lead_stage, an
+ * independent axis, so a single lead can be both b2bmausr and an MQL.
  */
 function getLeadsByCard(leads: Lead[], card: CardKey): Lead[] {
     switch (card) {
         case 'total': return leads;
         case 'leads_created': return leads.filter(l => l.created_alias === 'LeadTrge');
         case 'leads_assigned': return leads.filter(l => l.created_alias === 'b2bmausr');
+        // Empty today: b2bmausr and LeadTrge account for every lead in the dataset,
+        // so this card stays hidden. It exists as a guard — the day Salesforce grows
+        // a third creator, those leads would otherwise vanish from both creator
+        // cards without the row ever stopping to add up to the total.
+        case 'other': return leads.filter(l => l.created_alias !== 'LeadTrge' && l.created_alias !== 'b2bmausr');
         case 'mqls': return leads.filter(l => l.lead_stage === 'MQL');
         case 'sqls': return leads.filter(l => l.lead_stage === 'SQL');
     }
@@ -290,6 +301,7 @@ function countLeadsByCard(leads: Lead[]): Record<CardKey, number> {
         total: leads.length,
         leads_created: getLeadsByCard(leads, 'leads_created').length,
         leads_assigned: getLeadsByCard(leads, 'leads_assigned').length,
+        other: getLeadsByCard(leads, 'other').length,
         mqls: getLeadsByCard(leads, 'mqls').length,
         sqls: getLeadsByCard(leads, 'sqls').length,
     };
@@ -299,6 +311,7 @@ const CARD_LABELS: Record<CardKey, string> = {
     total: "Total Leads",
     leads_created: "Leads Created",
     leads_assigned: "Leads Assigned",
+    other: "Other",
     mqls: "MQL's",
     sqls: "SQL's",
 };
@@ -1120,7 +1133,7 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
 
             {isCarib ? (
                 <div className="flex flex-col gap-6">
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    <div className={`grid grid-cols-2 md:grid-cols-3 ${counts.other > 0 ? 'lg:grid-cols-6' : 'lg:grid-cols-5'} gap-4`}>
                         <StatCard label="Total leads" value={counts.total} icon={Users}
                             colorClass="text-foreground" iconBgClass="bg-muted"
                             onClick={() => setModalCard('total')} />
@@ -1130,6 +1143,11 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
                         <StatCard label="Leads created" value={counts.leads_created} icon={TrendingUp}
                             colorClass="text-emerald-600 dark:text-emerald-400" iconBgClass="bg-emerald-500/10"
                             onClick={() => setModalCard('leads_created')} />
+                        {counts.other > 0 && (
+                            <StatCard label="Other" value={counts.other} icon={Users}
+                                colorClass="text-slate-600 dark:text-slate-400" iconBgClass="bg-slate-500/10"
+                                onClick={() => setModalCard('other')} />
+                        )}
                         <StatCard label="MQL's" value={counts.mqls} icon={Target}
                             colorClass="text-violet-600 dark:text-violet-400" iconBgClass="bg-violet-500/10"
                             onClick={() => setModalCard('mqls')} />
@@ -1148,13 +1166,18 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
                 </div>
             ) : (
                 <div className="flex flex-col gap-6">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className={`grid grid-cols-2 ${counts.other > 0 ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
                         <StatCard label="Total leads" value={counts.total} icon={Users}
                             colorClass="text-foreground" iconBgClass="bg-muted"
                             onClick={() => setModalCard('total')} />
                         <StatCard label="Leads assigned" value={counts.leads_assigned} icon={TrendingUp}
                             colorClass="text-sky-600 dark:text-sky-400" iconBgClass="bg-sky-500/10"
                             onClick={() => setModalCard('leads_assigned')} />
+                        {counts.other > 0 && (
+                            <StatCard label="Other" value={counts.other} icon={Users}
+                                colorClass="text-slate-600 dark:text-slate-400" iconBgClass="bg-slate-500/10"
+                                onClick={() => setModalCard('other')} />
+                        )}
                         <StatCard label="MQL's" value={counts.mqls} icon={Target}
                             colorClass="text-violet-600 dark:text-violet-400" iconBgClass="bg-violet-500/10"
                             onClick={() => setModalCard('mqls')} />

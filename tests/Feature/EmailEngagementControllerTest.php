@@ -96,6 +96,50 @@ test('returns engagement logs for a carib campaign', function () {
         ->assertJsonPath('data.0.clicks', 1);
 });
 
+test('passes the engagement filter through to dataverse', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'token']),
+        'api.powerbi.com/*' => Http::response(fakeCampaigns([
+            ['id' => '701Pl00001TVgOQ', 'name' => 'CARIB_CAY_Event_SolutionSession_Ent_Apr2026'],
+        ])),
+        'org9e047986.api.crm.dynamics.com/*' => Http::response([
+            '@odata.count' => 1,
+            'value' => [fakeDataverseLog(['cr21a_hardbounced' => 1, 'cr21a_delivered' => 0])],
+        ]),
+    ]);
+
+    $response = $this->actingAs($this->user)->getJson(route('dataverse.campaign.email-logs', [
+        'campaignId' => '701Pl00001TVgOQ',
+        'email_name' => 'CARIB_CAY_Event_SolutionSession_Ent_Apr2026_Register2',
+        'engagement' => 'hard-bounced',
+    ]));
+
+    $response->assertOk()->assertJsonPath('data.0.hard_bounced', 1);
+
+    Http::assertSent(function ($request) {
+        return str_contains($request->url(), 'cr21a_emailengagementlogs')
+            && str_contains(urldecode($request->url()), 'cr21a_hardbounced eq 1');
+    });
+});
+
+test('rejects an unknown engagement filter', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'token']),
+        'api.powerbi.com/*' => Http::response(fakeCampaigns([
+            ['id' => '701Pl00001TVgOQ', 'name' => 'CARIB_CAY_Event_SolutionSession_Ent_Apr2026'],
+        ])),
+    ]);
+
+    $response = $this->actingAs($this->user)->getJson(route('dataverse.campaign.email-logs', [
+        'campaignId' => '701Pl00001TVgOQ',
+        'email_name' => 'CARIB_CAY_Event_SolutionSession_Ent_Apr2026_Register2',
+        'engagement' => 'soft-bounced',
+    ]));
+
+    $response->assertStatus(422);
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), 'dynamics.com'));
+});
+
 test('passes the cursor through and returns the next one', function () {
     Http::fake([
         'login.microsoftonline.com/*' => Http::response(['access_token' => 'token']),

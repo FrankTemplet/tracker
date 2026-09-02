@@ -207,24 +207,47 @@ test('a missing configuration throws instead of returning data', function () {
     Http::assertNothingSent();
 });
 
-test('getEmailEngagementLogs can restrict results to delivered recipients', function () {
+test('getEmailEngagementLogs can restrict results to an engagement subset', function (string $engagement, string $predicate) {
     Http::fake([
         'login.microsoftonline.com/*' => Http::response(['access_token' => 'dv-token']),
         'org9e047986.api.crm.dynamics.com/*' => Http::response(['value' => [fakeLogRow()]]),
     ]);
 
-    (new DataverseService)->getEmailEngagementLogs('701Pl0', 'Send1', null, null, true);
+    (new DataverseService)->getEmailEngagementLogs('701Pl0', 'Send1', null, null, $engagement);
+
+    Http::assertSent(function ($request) use ($predicate) {
+        if (! str_contains($request->url(), 'cr21a_emailengagementlogs')) {
+            return false;
+        }
+
+        return str_contains(urldecode($request->url()), 'and '.$predicate);
+    });
+})->with([
+    ['delivered', 'cr21a_delivered eq 1'],
+    ['hard-bounced', 'cr21a_hardbounced eq 1'],
+    ['clicked', 'cr21a_clickcount gt 0'],
+]);
+
+test('getEmailEngagementLogs ignores an unknown engagement filter', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'dv-token']),
+        'org9e047986.api.crm.dynamics.com/*' => Http::response(['value' => [fakeLogRow()]]),
+    ]);
+
+    (new DataverseService)->getEmailEngagementLogs('701Pl0', 'Send1', null, null, 'soft-bounced');
 
     Http::assertSent(function ($request) {
         if (! str_contains($request->url(), 'cr21a_emailengagementlogs')) {
             return false;
         }
 
-        return str_contains(urldecode($request->url()), 'and cr21a_delivered eq 1');
+        parse_str((string) parse_url(urldecode($request->url()), PHP_URL_QUERY), $query);
+
+        return ! str_contains((string) ($query['$filter'] ?? ''), 'soft');
     });
 });
 
-test('getEmailEngagementLogs caches delivered-only pages separately', function () {
+test('getEmailEngagementLogs caches each engagement subset separately', function () {
     Http::fake([
         'login.microsoftonline.com/*' => Http::response(['access_token' => 'dv-token']),
         'org9e047986.api.crm.dynamics.com/*' => Http::response(['value' => [fakeLogRow()]]),
@@ -232,9 +255,10 @@ test('getEmailEngagementLogs caches delivered-only pages separately', function (
 
     $service = new DataverseService;
     $service->getEmailEngagementLogs('701Pl0', 'Send1');
-    $service->getEmailEngagementLogs('701Pl0', 'Send1', null, null, true);
+    $service->getEmailEngagementLogs('701Pl0', 'Send1', null, null, 'delivered');
+    $service->getEmailEngagementLogs('701Pl0', 'Send1', null, null, 'hard-bounced');
 
-    Http::assertSentCount(3); // token + two distinct log queries
+    Http::assertSentCount(4); // token + three distinct log queries
 });
 
 test('getEmailEngagementLogs filters with the 15-character campaign id', function () {
@@ -265,4 +289,61 @@ test('getEmailEngagementLogs filters with the 15-character campaign id', functio
             && str_contains($url, 'cr21a_campaignid eq null')
             && ! str_contains($url, '701Pl00001NdCmkIAF');
     });
+});
+
+test('getSendNamesWithLogs groups every send in the log', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'dv-token']),
+        'org9e047986.api.crm.dynamics.com/*' => Http::response(['value' => [
+            ['cr21a_emailname' => 'Send1'],
+            ['cr21a_emailname' => ' SEND2 '],
+            ['cr21a_emailname' => ''],
+        ]]),
+    ]);
+
+    expect((new DataverseService)->getSendNamesWithLogs())->toBe(['send1', 'send2']);
+
+    Http::assertSent(function ($request) {
+        if (! str_contains($request->url(), 'cr21a_emailengagementlogs')) {
+            return false;
+        }
+
+        parse_str((string) parse_url(urldecode($request->url()), PHP_URL_QUERY), $query);
+
+        return ($query['$apply'] ?? '') === 'groupby((cr21a_emailname))';
+    });
+});
+
+test('getSendNamesWithLogs narrows the group to one engagement subset', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'dv-token']),
+        'org9e047986.api.crm.dynamics.com/*' => Http::response(['value' => [['cr21a_emailname' => 'Send1']]]),
+    ]);
+
+    expect((new DataverseService)->getSendNamesWithLogs('hard-bounced'))->toBe(['send1']);
+
+    Http::assertSent(function ($request) {
+        if (! str_contains($request->url(), 'cr21a_emailengagementlogs')) {
+            return false;
+        }
+
+        parse_str((string) parse_url(urldecode($request->url()), PHP_URL_QUERY), $query);
+
+        return ($query['$apply'] ?? '') === 'filter(cr21a_hardbounced eq 1)/groupby((cr21a_emailname))';
+    });
+});
+
+test('getSendNamesWithLogs caches each engagement subset separately', function () {
+    Http::fake([
+        'login.microsoftonline.com/*' => Http::response(['access_token' => 'dv-token']),
+        'org9e047986.api.crm.dynamics.com/*' => Http::response(['value' => [['cr21a_emailname' => 'Send1']]]),
+    ]);
+
+    $service = new DataverseService;
+    $service->getSendNamesWithLogs();
+    $service->getSendNamesWithLogs();
+    $service->getSendNamesWithLogs('clicked');
+    $service->getSendNamesWithLogs('hard-bounced');
+
+    Http::assertSentCount(4); // token + three distinct coverage queries
 });

@@ -1,10 +1,22 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Mail, Clock } from 'lucide-react';
+import { useState } from 'react';
 import type { EmailCampaignMetric } from '@/components/campaign-metrics';
+import { EmailRecipientsModal } from '@/components/email-recipients-modal';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { hasRecipientCoverage } from '@/lib/recipient-engagement';
+import type { RecipientEngagementFilter } from '@/lib/recipient-engagement';
 
 interface EmailCampaignListProps {
     emails: EmailCampaignMetric[];
+    campaignId?: string;
+    /** Recipient engagement lives in Dataverse, which only holds Carib data for now. */
+    region?: string;
+}
+
+interface RecipientDrilldown {
+    email: EmailCampaignMetric;
+    engagement: RecipientEngagementFilter;
 }
 
 function formatScheduledDate(value: string): string {
@@ -23,7 +35,27 @@ function formatScheduledDate(value: string): string {
     });
 }
 
-export function EmailCampaignList({ emails }: EmailCampaignListProps) {
+export function EmailCampaignList({ emails, campaignId, region }: EmailCampaignListProps) {
+    const [drilldown, setDrilldown] = useState<RecipientDrilldown | null>(null);
+
+    // Recipient engagement is only wired for Carib campaigns so far
+    const recipientsAvailable = region?.toLowerCase() === 'carib' && !!campaignId;
+
+    /**
+     * The recipient log is fed separately from the metrics and covers only part
+     * of the catalogue, so a send can hold a metric here and no rows there —
+     * hard bounces especially, which only a handful of sends have logged. A
+     * tile with nothing behind it stays a plain tile instead of opening an
+     * empty modal.
+     */
+    const openRecipients = (email: EmailCampaignMetric, engagement: RecipientEngagementFilter, value: number) => {
+        if (!recipientsAvailable || value <= 0 || !hasRecipientCoverage(email.recipient_engagements, engagement)) {
+            return undefined;
+        }
+
+        return () => setDrilldown({ email, engagement });
+    };
+
     if (emails.length === 0) {
         return null;
     }
@@ -58,11 +90,25 @@ export function EmailCampaignList({ emails }: EmailCampaignListProps) {
                         </div>
 
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
-                            <Metric label="Delivered" value={email.delivered} />
+                            <Metric
+                                label="Delivered"
+                                value={email.delivered}
+                                onClick={openRecipients(email, 'delivered', email.delivered)}
+                            />
                             <Metric label="Unique Opens" value={email.unique_opens} rate={`${email.open_rate}%`} />
                             <Metric label="Total Opens" value={email.total_opens} />
-                            <Metric label="Unique Clicks" value={email.unique_clicks} rate={`${email.unique_click_through_rate}% CTR`} />
-                            <Metric label="Hard Bounces" value={email.hard_bounces} rate={`${email.delivery_rate}% delivery`} />
+                            <Metric
+                                label="Unique Clicks"
+                                value={email.unique_clicks}
+                                rate={`${email.unique_click_through_rate}% CTR`}
+                                onClick={openRecipients(email, 'clicked', email.unique_clicks)}
+                            />
+                            <Metric
+                                label="Hard Bounces"
+                                value={email.hard_bounces}
+                                rate={`${email.delivery_rate}% delivery`}
+                                onClick={openRecipients(email, 'hard-bounced', email.hard_bounces)}
+                            />
                             <Metric label="Click-to-Open" value={`${email.click_to_open_ratio}%`} />
                             <Metric label="Total CTR" value={`${email.total_click_through_rate}%`} />
                             {email.segment && <Metric label="Segment" value={email.segment} />}
@@ -70,18 +116,54 @@ export function EmailCampaignList({ emails }: EmailCampaignListProps) {
                     </div>
                 ))}
             </CardContent>
+
+            <EmailRecipientsModal
+                open={drilldown !== null}
+                onOpenChange={(isOpen) => !isOpen && setDrilldown(null)}
+                campaignId={campaignId ?? ''}
+                emailName={drilldown?.email.name ?? null}
+                emailSubject={drilldown?.email.subject}
+                engagement={drilldown?.engagement ?? null}
+            />
         </Card>
     );
 }
 
-function Metric({ label, value, rate }: { label: string; value: string | number; rate?: string }) {
-    return (
-        <div className="rounded-lg bg-muted/40 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+function Metric({
+    label,
+    value,
+    rate,
+    onClick,
+}: {
+    label: string;
+    value: string | number;
+    rate?: string;
+    onClick?: () => void;
+}) {
+    const content = (
+        <>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {label}
+                {onClick && <span className="ml-1 normal-case font-normal opacity-60">↗ view</span>}
+            </p>
             <p className="font-semibold mt-0.5">
                 {typeof value === 'number' ? value.toLocaleString() : value}
             </p>
             {rate && <p className="text-[10px] text-muted-foreground mt-0.5">{rate}</p>}
-        </div>
+        </>
+    );
+
+    if (!onClick) {
+        return <div className="rounded-lg bg-muted/40 px-3 py-2">{content}</div>;
+    }
+
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className="rounded-lg bg-muted/40 px-3 py-2 text-left transition-all cursor-pointer hover:bg-muted/70 hover:shadow-sm active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+            {content}
+        </button>
     );
 }

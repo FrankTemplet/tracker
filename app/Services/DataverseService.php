@@ -31,6 +31,20 @@ class DataverseService
     ];
 
     /**
+     * OData predicates for the recipient subsets the drill-downs offer.
+     *
+     * `cr21a_delivered` and `cr21a_hardbounced` are flags, while
+     * `cr21a_clickcount` is a running count, hence the different comparisons.
+     *
+     * @var array<string, string>
+     */
+    public const ENGAGEMENT_FILTERS = [
+        'delivered' => 'cr21a_delivered eq 1',
+        'hard-bounced' => 'cr21a_hardbounced eq 1',
+        'clicked' => 'cr21a_clickcount gt 0',
+    ];
+
+    /**
      * Check if Dataverse credentials are configured.
      */
     public function hasCredentials(): bool
@@ -77,7 +91,7 @@ class DataverseService
      * campaign ID keeps sends that share a name across campaigns apart.
      *
      * @param  string|null  $cursor  Skip token returned as next_cursor by a previous call
-     * @param  bool  $deliveredOnly  Keep only recipients the send was delivered to
+     * @param  string|null  $engagement  One of self::ENGAGEMENT_FILTERS, or null for every recipient
      * @return array{
      *     logs: array<int, array<string, mixed>>,
      *     next_cursor: string|null,
@@ -89,7 +103,7 @@ class DataverseService
         string $emailName,
         ?string $cursor = null,
         ?int $pageSize = null,
-        bool $deliveredOnly = false,
+        ?string $engagement = null,
     ): array {
         $pageSize = $this->pageSize($pageSize);
 
@@ -97,9 +111,11 @@ class DataverseService
             throw new \Exception('Dataverse credentials are not configured.');
         }
 
-        $cacheKey = 'dataverse_email_logs_'.md5($campaignId.'|'.$emailName.'|'.$cursor.'|'.$pageSize.'|'.($deliveredOnly ? '1' : '0'));
+        $engagement = isset(self::ENGAGEMENT_FILTERS[$engagement]) ? $engagement : null;
 
-        return Cache::remember($cacheKey, $this->cacheTtl(), function () use ($campaignId, $emailName, $cursor, $pageSize, $deliveredOnly) {
+        $cacheKey = 'dataverse_email_logs_'.md5($campaignId.'|'.$emailName.'|'.$cursor.'|'.$pageSize.'|'.($engagement ?? ''));
+
+        return Cache::remember($cacheKey, $this->cacheTtl(), function () use ($campaignId, $emailName, $cursor, $pageSize, $engagement) {
             // cr21a_campaignid is not stored in a single shape: most rows hold
             // the 15-character Salesforce ID, a few hold the 18-character form,
             // and some sends have it empty altogether. Power BI always hands us
@@ -113,8 +129,8 @@ class DataverseService
                 $this->escape(PowerBiDataTransformer::normalizeSalesforceId($campaignId)),
             );
 
-            if ($deliveredOnly) {
-                $filter .= ' and cr21a_delivered eq 1';
+            if ($engagement !== null) {
+                $filter .= ' and '.self::ENGAGEMENT_FILTERS[$engagement];
             }
 
             $response = $this->get('cr21a_emailengagementlogs', [
@@ -139,25 +155,39 @@ class DataverseService
      * Every send name the recipient log holds rows for, lowercased.
      *
      * The log is fed separately from Power BI and covers only part of the
-     * catalogue — as of this writing 57 Carib sends, none newer than Jul 2026.
+     * catalogue — as of this writing 64 Carib sends, none newer than Jul 2026.
      * Without this list the UI cannot tell "this send reached nobody" from
      * "this send was never loaded into the log", and both look like an empty
      * modal to the user.
      *
+     * Passing an engagement narrows it to the sends holding rows of that subset,
+     * which is much smaller than the log as a whole: 5 sends have a hard-bounce
+     * row against the 60 with a delivered one. A metric drill-down needs that
+     * per-subset answer, not "this send is in the log somewhere".
+     *
      * A groupby returns one row per distinct name, so this stays a single cheap
      * request no matter how many recipients are behind it.
      *
+     * @param  string|null  $engagement  One of self::ENGAGEMENT_FILTERS, or null for every row
      * @return list<string>
      */
-    public function getSendNamesWithLogs(): array
+    public function getSendNamesWithLogs(?string $engagement = null): array
     {
         if (! $this->hasCredentials()) {
             return [];
         }
 
-        return Cache::remember('dataverse_send_names_with_logs', $this->cacheTtl(), function () {
+        $engagement = isset(self::ENGAGEMENT_FILTERS[$engagement]) ? $engagement : null;
+
+        $cacheKey = 'dataverse_send_names_with_logs_'.($engagement ?? 'all');
+
+        return Cache::remember($cacheKey, $this->cacheTtl(), function () use ($engagement) {
+            $groupBy = 'groupby((cr21a_emailname))';
+
             $response = $this->get('cr21a_emailengagementlogs', [
-                '$apply' => 'groupby((cr21a_emailname))',
+                '$apply' => $engagement === null
+                    ? $groupBy
+                    : 'filter('.self::ENGAGEMENT_FILTERS[$engagement].')/'.$groupBy,
             ], null, 5000);
 
             $names = [];
@@ -182,13 +212,13 @@ class DataverseService
      *
      * @return array<int, array<string, mixed>>
      */
-    public function getAllEmailEngagementLogs(string $campaignId, string $emailName, int $maxRows = 50000, bool $deliveredOnly = false): array
+    public function getAllEmailEngagementLogs(string $campaignId, string $emailName, int $maxRows = 50000, ?string $engagement = null): array
     {
         $logs = [];
         $cursor = null;
 
         do {
-            $page = $this->getEmailEngagementLogs($campaignId, $emailName, $cursor, 5000, $deliveredOnly);
+            $page = $this->getEmailEngagementLogs($campaignId, $emailName, $cursor, 5000, $engagement);
             $logs = array_merge($logs, $page['logs']);
             $cursor = $page['next_cursor'];
         } while ($cursor !== null && count($logs) < $maxRows);

@@ -300,7 +300,11 @@ class PowerBiController extends Controller
      * Power BI and lags it. Marking each send lets the UI say "not in the
      * recipient log" instead of opening an empty modal that reads as a bug.
      *
-     * `null` means the coverage list could not be read; the UI keeps the
+     * The coverage is reported per engagement subset, not once per send: the
+     * log holds a hard-bounce row for only a handful of the sends it covers, so
+     * a send with rows can still have nothing behind its Hard Bounces tile.
+     *
+     * `null` means the coverage lists could not be read; the UI keeps the
      * drill-down offered in that case rather than hiding a working feature
      * because of a transient Dataverse failure.
      *
@@ -309,20 +313,35 @@ class PowerBiController extends Controller
      */
     protected function markRecipientCoverage(array $emails): array
     {
+        $dataverse = app(DataverseService::class);
+
         try {
-            $covered = array_flip(app(DataverseService::class)->getSendNamesWithLogs());
+            $covered = array_flip($dataverse->getSendNamesWithLogs());
+
+            $coveredByEngagement = [];
+
+            foreach (array_keys(DataverseService::ENGAGEMENT_FILTERS) as $engagement) {
+                $coveredByEngagement[$engagement] = array_flip($dataverse->getSendNamesWithLogs($engagement));
+            }
         } catch (\Exception $e) {
             Log::warning('Could not read Dataverse recipient coverage', ['error' => $e->getMessage()]);
 
             return array_map(function (array $email) {
                 $email['has_recipients'] = null;
+                $email['recipient_engagements'] = null;
 
                 return $email;
             }, $emails);
         }
 
-        return array_map(function (array $email) use ($covered) {
-            $email['has_recipients'] = isset($covered[strtolower(trim((string) ($email['name'] ?? '')))]);
+        return array_map(function (array $email) use ($covered, $coveredByEngagement) {
+            $name = strtolower(trim((string) ($email['name'] ?? '')));
+
+            $email['has_recipients'] = isset($covered[$name]);
+            $email['recipient_engagements'] = array_values(array_keys(array_filter(
+                $coveredByEngagement,
+                fn (array $names) => isset($names[$name]),
+            )));
 
             return $email;
         }, $emails);

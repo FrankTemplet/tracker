@@ -496,6 +496,16 @@ export function LeadAgingCard({ aging }: { aging: AgingSummary }) {
                         how old the database is, since long-closed records never leave the +30d bucket.
                     </InfoHint>
                 </div>
+                {aging.measured > 0 && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        <span className="font-semibold uppercase tracking-wider">Never touched</span>
+                        <span className="mx-1.5">·</span>
+                        <span className={`font-bold tabular-nums ${AGING_TEXT_CLASS[aging.untouchedShare > 50 ? 'late' : aging.untouchedShare > 25 ? 'warn' : 'ok']}`}>
+                            {aging.untouched.toLocaleString()}
+                        </span>
+                        <span> of {aging.measured.toLocaleString()} ({formatPercent(aging.untouchedShare)}) have no owner change on record — nobody has worked them yet</span>
+                    </p>
+                )}
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
                 {aging.measured === 0 ? (
@@ -533,25 +543,6 @@ export function LeadAgingCard({ aging }: { aging: AgingSummary }) {
                                     buckets={aging.firstTouchBuckets}
                                 />
                             </div>
-                        </div>
-
-                        <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
-                            <span className="flex flex-col">
-                                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                    Never touched
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                    Leads with no owner change on record — nobody has worked them yet
-                                </span>
-                            </span>
-                            <span className="text-sm">
-                                <span className={`font-bold tabular-nums ${AGING_TEXT_CLASS[aging.untouchedShare > 50 ? 'late' : aging.untouchedShare > 25 ? 'warn' : 'ok']}`}>
-                                    {aging.untouched.toLocaleString()}
-                                </span>
-                                <span className="text-muted-foreground ml-1.5">
-                                    of {aging.measured.toLocaleString()} ({formatPercent(aging.untouchedShare)})
-                                </span>
-                            </span>
                         </div>
                     </>
                 )}

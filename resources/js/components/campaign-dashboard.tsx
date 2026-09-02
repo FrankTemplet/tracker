@@ -174,7 +174,11 @@ export function CampaignDashboard({
                                 region={selectedRegion}
                             />
                             {analytics && analytics.emails.length > 0 && (
-                                <EmailCampaignList emails={analytics.emails} />
+                                <EmailCampaignList
+                                    emails={analytics.emails}
+                                    campaignId={selectedCampaignId}
+                                    region={selectedRegion}
+                                />
                             )}
                         </div>
                     )

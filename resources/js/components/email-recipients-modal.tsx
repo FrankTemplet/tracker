@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { exportToExcel } from '@/lib/export-to-excel';
+import { ENGAGEMENT_DESCRIPTION, ENGAGEMENT_EMPTY_STATE } from '@/lib/recipient-engagement';
+import type { RecipientEngagementFilter } from '@/lib/recipient-engagement';
 
 const PAGE_SIZE = 100;
 
@@ -38,8 +40,8 @@ interface EmailRecipientsModalProps {
     campaignId: string;
     emailName: string | null;
     emailSubject?: string;
-    /** Only fetch recipients the send was actually delivered to. */
-    deliveredOnly?: boolean;
+    /** Restrict the recipients to one engagement subset; omit for every recipient. */
+    engagement?: RecipientEngagementFilter | null;
 }
 
 interface LogsResponse {
@@ -92,7 +94,7 @@ export function EmailRecipientsModal({
     campaignId,
     emailName,
     emailSubject,
-    deliveredOnly = false,
+    engagement = null,
 }: EmailRecipientsModalProps) {
     const { submit } = useHttp();
     const [logs, setLogs] = useState<EmailEngagementLog[]>([]);
@@ -113,13 +115,13 @@ export function EmailRecipientsModal({
                     query: {
                         email_name: emailName,
                         page_size: PAGE_SIZE,
-                        ...(deliveredOnly ? { delivered_only: 1 } : {}),
+                        ...(engagement ? { engagement } : {}),
                         ...(nextCursor ? { cursor: nextCursor } : {}),
                     },
                 }),
             )) as LogsResponse;
         },
-        [campaignId, emailName, deliveredOnly, submit],
+        [campaignId, emailName, engagement, submit],
     );
 
     // First page whenever a different send is opened
@@ -216,7 +218,7 @@ export function EmailRecipientsModal({
                         {emailSubject || emailName || 'Recipients'}
                     </DialogTitle>
                     <DialogDescription className="break-all">
-                        Recipient engagement for {emailName}
+                        {engagement ? ENGAGEMENT_DESCRIPTION[engagement] : 'Recipient engagement'} · {emailName}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -244,7 +246,16 @@ export function EmailRecipientsModal({
                     ) : logs.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-12 gap-2">
                             <Users className="h-5 w-5 text-muted-foreground/50" />
-                            <p className="text-sm text-muted-foreground">No recipients found for this email</p>
+                            <p className="text-sm text-muted-foreground text-center">
+                                {engagement
+                                    ? ENGAGEMENT_EMPTY_STATE[engagement]
+                                    : 'No recipients found for this email'}
+                            </p>
+                            <p className="text-xs text-muted-foreground/70 text-center max-w-md">
+                                The engagement log is loaded separately from the campaign metrics and
+                                covers only part of the catalogue, so a send can report a total here
+                                with no recipient rows behind it yet.
+                            </p>
                         </div>
                     ) : (
                         <div className="overflow-auto max-h-[55vh] rounded-lg border">

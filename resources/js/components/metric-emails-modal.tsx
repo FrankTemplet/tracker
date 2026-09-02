@@ -11,6 +11,8 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { exportToExcel } from '@/lib/export-to-excel';
+import { hasRecipientCoverage } from '@/lib/recipient-engagement';
+import type { RecipientEngagementFilter } from '@/lib/recipient-engagement';
 
 interface MetricEmailsModalProps {
     open: boolean;
@@ -30,6 +32,18 @@ const METRIC_VALUE_LABEL: Record<MetricDrilldownKey, string> = {
     'unique-clicks': 'Unique Clicks',
     'hard-bounces': 'Hard Bounces',
     'registered-appointment': 'Registered / Schedule Appointment',
+};
+
+/**
+ * Metrics whose totals can be broken down into the recipients behind them.
+ *
+ * Opens are missing on purpose: the engagement log counts opens per recipient
+ * but the drill-down for them goes through the members modal instead.
+ */
+const METRIC_ENGAGEMENT: Partial<Record<MetricDrilldownKey, RecipientEngagementFilter>> = {
+    delivered: 'delivered',
+    'unique-clicks': 'clicked',
+    'hard-bounces': 'hard-bounced',
 };
 
 function filterEmailsByMetric(emails: EmailCampaignMetric[], metric: MetricDrilldownKey): EmailCampaignMetric[] {
@@ -104,23 +118,24 @@ export function MetricEmailsModal({
 
     const valueLabel = metric ? METRIC_VALUE_LABEL[metric] : '';
 
-    // Drilling into recipients is only wired for Carib deliveries so far
-    const recipientsAvailable =
-        metric === 'delivered' && region?.toLowerCase() === 'carib' && !!campaignId;
+    const engagement = metric ? METRIC_ENGAGEMENT[metric] ?? null : null;
+
+    // Recipient engagement is only wired for Carib campaigns so far
+    const recipientsAvailable = engagement !== null && region?.toLowerCase() === 'carib' && !!campaignId;
 
     /**
      * The recipient log is loaded separately from the metrics and lags them, so
-     * a send can have deliveries here and no rows there. Offering the click
-     * anyway lands the user in an empty modal that reads as a bug, so each row
-     * decides for itself. `has_recipients` undefined or null means the coverage
-     * list was unavailable — the click stays offered rather than hiding a
-     * working feature.
+     * a send can have deliveries here and no rows there — and it holds rows for
+     * one metric but not another. Offering the click anyway lands the user in
+     * an empty modal that reads as a bug, so each row decides for itself.
      */
     const canDrillInto = (email: EmailCampaignMetric) =>
-        recipientsAvailable && email.has_recipients !== false;
+        recipientsAvailable
+        && engagement !== null
+        && hasRecipientCoverage(email.recipient_engagements, engagement);
 
     const uncovered = recipientsAvailable
-        ? filteredEmails.filter((email) => email.has_recipients === false).length
+        ? filteredEmails.filter((email) => !canDrillInto(email)).length
         : 0;
 
     const handleDownload = () => {
@@ -193,7 +208,7 @@ return;
                                                     )}
                                                     <span className="line-clamp-2">{email.subject}</span>
                                                 </span>
-                                                {recipientsAvailable && email.has_recipients === false && (
+                                                {recipientsAvailable && !canDrillInto(email) && (
                                                     <span className="mt-1 block text-[11px] text-muted-foreground italic">
                                                         Recipients not in the engagement log
                                                     </span>
@@ -249,7 +264,7 @@ return;
                 campaignId={campaignId ?? ''}
                 emailName={selectedEmail?.name ?? null}
                 emailSubject={selectedEmail?.subject}
-                deliveredOnly={metric === 'delivered'}
+                engagement={engagement}
             />
         </Dialog>
     );
