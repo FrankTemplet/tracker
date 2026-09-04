@@ -43,6 +43,14 @@ php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 
+# The application cache is a shared, server-side store holding Power BI and
+# Dataverse responses for 30 minutes. Nothing above touches it, so a deploy that
+# changes how that data is read or filtered kept serving the previous shape
+# until the TTL happened to expire. The cost of dropping it is one cold fetch
+# per query; the cost of keeping it is shipping a fix nobody can see.
+echo "Clearing the application data cache..."
+php artisan cache:clear
+
 echo "Reload PHP-FPM..."
 sudo systemctl reload php8.4-fpm
 

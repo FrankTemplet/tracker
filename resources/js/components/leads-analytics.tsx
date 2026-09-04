@@ -128,21 +128,6 @@ export function LeadFunnelCard({ funnel }: { funnel: LeadFunnel }) {
                     branch
                     hint="Processed leads whose owner changed at least once"
                 />
-
-                {/* Converted is intentionally unmeasured: '(raw) Oppty' carries no
-                    lead key, so there is nothing in the dataset to join on. The
-                    stage is drawn empty rather than dropped so the gap is visible
-                    to whoever adds the column upstream. */}
-                <div>
-                    <div className="flex items-baseline justify-between gap-3 mb-1">
-                        <span className="text-xs font-semibold text-muted-foreground">Converted</span>
-                        <span className="shrink-0 text-xs text-muted-foreground">No data</span>
-                    </div>
-                    <div className="w-full h-4 rounded-[4px] border border-dashed" />
-                    <p className="text-xs text-muted-foreground mt-1">
-                        Pending: <code className="text-[11px]">(raw) Oppty</code> does not expose the lead that originated it.
-                    </p>
-                </div>
             </CardContent>
         </Card>
     );

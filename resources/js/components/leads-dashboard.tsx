@@ -1,12 +1,14 @@
-import { TrendingUp, BarChart3, Target, ChevronLeft, ChevronRight, Filter, Search, User, Users, Clock, ArrowRightLeft, Tag, Activity, Hourglass } from 'lucide-react';
+import { TrendingUp, BarChart3, Target, ChevronLeft, ChevronRight, ChevronDown, Filter, Search, User, Users, Clock, ArrowRightLeft, Tag, Activity, Hourglass } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
 import { DateRangePicker } from '@/components/date-range-picker';
 import { LeadAgingCard, LeadFunnelCard, LeadSourceCard } from '@/components/leads-analytics';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatDuration, agingSeverity, AGING_TEXT_CLASS, AGING_BADGE_CLASS } from '@/lib/format-duration';
 import { buildAgingSummary, buildFunnel, buildSourceBreakdown, parseLeadDate } from '@/lib/lead-analytics';
@@ -78,7 +80,7 @@ export interface LeadsDashboardPageProps {
     error?: string;
 }
 
-type CardKey = 'total' | 'leads_created' | 'leads_assigned' | 'other' | 'mqls' | 'sqls';
+type CardKey = 'total' | 'leads_created' | 'leads_assigned' | 'mqls' | 'sqls' | 'other';
 
 // ---------------------------------------------------------------------------
 // Stat card
@@ -260,6 +262,18 @@ function customRangeLabel(range: CustomRange): string {
     return 'Custom range';
 }
 
+function countrySelectionLabel(countries: string[]): string {
+    if (countries.length === 0) {
+        return 'All countries';
+    }
+
+    if (countries.length <= 2) {
+        return countries.join(', ');
+    }
+
+    return `${countries.length} countries`;
+}
+
 // ---------------------------------------------------------------------------
 // Card drill-down helpers
 // ---------------------------------------------------------------------------
@@ -273,26 +287,25 @@ function customRangeLabel(range: CustomRange): string {
  * to zero. The two aliases are distinct creators and never overlap:
  *   LeadTrge -> the Sales Outcomes Lead Triage user (leads created)
  *   b2bmausr -> the B2B marketing automation user (leads assigned)
- * So the two cards are disjoint subsets of the total, not nested ones. Every
- * remaining creator (manual entry, imports, integrations) lands in 'other', so
- * created + assigned + other adds up to the total exactly — each lead carries
- * exactly one alias. Keep this in sync with the same split in PowerBiService.
+ * So the two cards are disjoint subsets of the total, not nested ones. Keep this
+ * in sync with the same split in PowerBiService.
  *
- * 'mqls' and 'sqls' are NOT part of that sum: they read lead_stage, an
- * independent axis, so a single lead can be both b2bmausr and an MQL.
+ * 'mqls', 'sqls' and 'other' read lead_stage instead, an independent axis — a
+ * single lead can be both b2bmausr and an MQL. Those three do partition the
+ * total between them: 'other' is every stage that is not MQL or SQL.
  */
 function getLeadsByCard(leads: Lead[], card: CardKey): Lead[] {
     switch (card) {
         case 'total': return leads;
         case 'leads_created': return leads.filter(l => l.created_alias === 'LeadTrge');
         case 'leads_assigned': return leads.filter(l => l.created_alias === 'b2bmausr');
-        // Empty today: b2bmausr and LeadTrge account for every lead in the dataset,
-        // so this card stays hidden. It exists as a guard — the day Salesforce grows
-        // a third creator, those leads would otherwise vanish from both creator
-        // cards without the row ever stopping to add up to the total.
-        case 'other': return leads.filter(l => l.created_alias !== 'LeadTrge' && l.created_alias !== 'b2bmausr');
         case 'mqls': return leads.filter(l => l.lead_stage === 'MQL');
         case 'sqls': return leads.filter(l => l.lead_stage === 'SQL');
+        // Every other stage, the blank one included: today Inquiry, SAL, Rejected,
+        // "SQL - No Oppty" and leads Salesforce has not staged yet. Matching by
+        // exclusion rather than listing the stages means a stage added upstream
+        // shows up here instead of falling out of the row silently.
+        case 'other': return leads.filter(l => l.lead_stage !== 'MQL' && l.lead_stage !== 'SQL');
     }
 }
 
@@ -301,9 +314,9 @@ function countLeadsByCard(leads: Lead[]): Record<CardKey, number> {
         total: leads.length,
         leads_created: getLeadsByCard(leads, 'leads_created').length,
         leads_assigned: getLeadsByCard(leads, 'leads_assigned').length,
-        other: getLeadsByCard(leads, 'other').length,
         mqls: getLeadsByCard(leads, 'mqls').length,
         sqls: getLeadsByCard(leads, 'sqls').length,
+        other: getLeadsByCard(leads, 'other').length,
     };
 }
 
@@ -311,9 +324,9 @@ const CARD_LABELS: Record<CardKey, string> = {
     total: "Total Leads",
     leads_created: "Leads Created",
     leads_assigned: "Leads Assigned",
-    other: "Other",
     mqls: "MQL's",
     sqls: "SQL's",
+    other: "Other",
 };
 
 // ---------------------------------------------------------------------------
@@ -1002,7 +1015,7 @@ function LeadsTable({ leads, onSelectLead }: { leads: Lead[]; onSelectLead: (lea
 export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProps) {
     const isCarib = variant === 'carib';
 
-    const [countryFilter, setCountryFilter] = useState('all');
+    const [countryFilter, setCountryFilter] = useState<string[]>([]);
     const [periodFilter, setPeriodFilter] = useState('all');
     const [customRange, setCustomRange] = useState<CustomRange>(EMPTY_RANGE);
     const [modalCard, setModalCard] = useState<CardKey | null>(null);
@@ -1016,8 +1029,10 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
     const filteredLeads = useMemo(() => {
         let result = leads;
 
-        if (countryFilter !== 'all') {
-            result = result.filter(l => l.country === countryFilter);
+        if (countryFilter.length > 0) {
+            const selectedCountries = new Set(countryFilter);
+
+            result = result.filter(l => selectedCountries.has(l.country));
         }
 
         result = filterByPeriod(result, periodFilter, customRange);
@@ -1025,7 +1040,14 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
         return result;
     }, [leads, countryFilter, periodFilter, customRange]);
 
-    const hasActiveFilters = countryFilter !== 'all' || periodFilter !== 'all';
+    const hasActiveFilters = countryFilter.length > 0 || periodFilter !== 'all';
+    const countryFilterLabel = countrySelectionLabel(countryFilter);
+
+    function toggleCountryFilter(country: string): void {
+        setCountryFilter(current => current.includes(country)
+            ? current.filter(selected => selected !== country)
+            : [...current, country]);
+    }
 
     // Cards, table and drill-down modal all read from the same filtered set.
     const counts = useMemo(() => countLeadsByCard(filteredLeads), [filteredLeads]);
@@ -1042,8 +1064,8 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
     const activeFilterLabel = useMemo(() => {
         const parts: string[] = [];
 
-        if (countryFilter !== 'all') {
-            parts.push(countryFilter);
+        if (countryFilter.length > 0) {
+            parts.push(countryFilterLabel);
         }
 
         if (periodFilter === 'custom') {
@@ -1053,7 +1075,7 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
         }
 
         return parts.join(' · ');
-    }, [countryFilter, periodFilter, customRange]);
+    }, [countryFilter.length, countryFilterLabel, periodFilter, customRange]);
 
     return (
         <div className="flex h-full flex-col gap-6 p-4 md:p-6">
@@ -1076,17 +1098,39 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
                     <Filter className="h-3.5 w-3.5" />
                     Filters
                 </div>
-                <Select value={countryFilter} onValueChange={v => setCountryFilter(v)}>
-                    <SelectTrigger className="h-8 w-48 text-xs">
-                        <SelectValue placeholder="Country" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all" className="text-xs">All countries</SelectItem>
-                        {countryOptions.map(c => (
-                            <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <Button type="button" variant="outline" size="sm" className="h-8 w-48 justify-between px-3 text-xs font-normal">
+                            <span className="truncate">{countryFilterLabel}</span>
+                            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-56 p-2">
+                        <div className="flex items-center justify-between gap-3 px-2 py-1.5">
+                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Country</span>
+                            {countryFilter.length > 0 && (
+                                <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setCountryFilter([])}>
+                                    Clear
+                                </button>
+                            )}
+                        </div>
+                        <div className="max-h-64 overflow-y-auto py-1">
+                            {countryOptions.length === 0 ? (
+                                <p className="px-2 py-2 text-xs text-muted-foreground italic">No countries available</p>
+                            ) : countryOptions.map((country, index) => {
+                                const checked = countryFilter.includes(country);
+                                const id = `country-filter-${index}`;
+
+                                return (
+                                    <label key={country} htmlFor={id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/60">
+                                        <Checkbox id={id} checked={checked} onCheckedChange={() => toggleCountryFilter(country)} />
+                                        <span className="truncate">{country}</span>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    </PopoverContent>
+                </Popover>
                 
                 <Select
                     value={periodFilter}
@@ -1121,7 +1165,7 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
                 {hasActiveFilters && (
                     <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground"
                         onClick={() => {
-                            setCountryFilter('all');
+                            setCountryFilter([]);
                             setPeriodFilter('all');
                             setCustomRange(EMPTY_RANGE);
                         }}
@@ -1133,7 +1177,7 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
 
             {isCarib ? (
                 <div className="flex flex-col gap-6">
-                    <div className={`grid grid-cols-2 md:grid-cols-3 ${counts.other > 0 ? 'lg:grid-cols-6' : 'lg:grid-cols-5'} gap-4`}>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                         <StatCard label="Total leads" value={counts.total} icon={Users}
                             colorClass="text-foreground" iconBgClass="bg-muted"
                             onClick={() => setModalCard('total')} />
@@ -1143,17 +1187,15 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
                         <StatCard label="Leads created" value={counts.leads_created} icon={TrendingUp}
                             colorClass="text-emerald-600 dark:text-emerald-400" iconBgClass="bg-emerald-500/10"
                             onClick={() => setModalCard('leads_created')} />
-                        {counts.other > 0 && (
-                            <StatCard label="Other" value={counts.other} icon={Users}
-                                colorClass="text-slate-600 dark:text-slate-400" iconBgClass="bg-slate-500/10"
-                                onClick={() => setModalCard('other')} />
-                        )}
                         <StatCard label="MQL's" value={counts.mqls} icon={Target}
                             colorClass="text-violet-600 dark:text-violet-400" iconBgClass="bg-violet-500/10"
                             onClick={() => setModalCard('mqls')} />
                         <StatCard label="SQL's" value={counts.sqls} icon={BarChart3}
                             colorClass="text-amber-600 dark:text-amber-400" iconBgClass="bg-amber-500/10"
                             onClick={() => setModalCard('sqls')} />
+                        <StatCard label="Other" value={counts.other} icon={Users}
+                            colorClass="text-slate-600 dark:text-slate-400" iconBgClass="bg-slate-500/10"
+                            onClick={() => setModalCard('other')} />
                     </div>
                     <div className="grid gap-6 lg:grid-cols-3">
                         <div className="lg:col-span-2">
@@ -1166,24 +1208,22 @@ export function LeadsDashboard({ variant, leads, error }: LeadsDashboardPageProp
                 </div>
             ) : (
                 <div className="flex flex-col gap-6">
-                    <div className={`grid grid-cols-2 ${counts.other > 0 ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                         <StatCard label="Total leads" value={counts.total} icon={Users}
                             colorClass="text-foreground" iconBgClass="bg-muted"
                             onClick={() => setModalCard('total')} />
                         <StatCard label="Leads assigned" value={counts.leads_assigned} icon={TrendingUp}
                             colorClass="text-sky-600 dark:text-sky-400" iconBgClass="bg-sky-500/10"
                             onClick={() => setModalCard('leads_assigned')} />
-                        {counts.other > 0 && (
-                            <StatCard label="Other" value={counts.other} icon={Users}
-                                colorClass="text-slate-600 dark:text-slate-400" iconBgClass="bg-slate-500/10"
-                                onClick={() => setModalCard('other')} />
-                        )}
                         <StatCard label="MQL's" value={counts.mqls} icon={Target}
                             colorClass="text-violet-600 dark:text-violet-400" iconBgClass="bg-violet-500/10"
                             onClick={() => setModalCard('mqls')} />
                         <StatCard label="SQL's" value={counts.sqls} icon={BarChart3}
                             colorClass="text-amber-600 dark:text-amber-400" iconBgClass="bg-amber-500/10"
                             onClick={() => setModalCard('sqls')} />
+                        <StatCard label="Other" value={counts.other} icon={Users}
+                            colorClass="text-slate-600 dark:text-slate-400" iconBgClass="bg-slate-500/10"
+                            onClick={() => setModalCard('other')} />
                     </div>
                     <div className="grid gap-6 lg:grid-cols-3">
                         <div className="lg:col-span-2">
